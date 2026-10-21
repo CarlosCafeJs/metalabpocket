@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#142440">
+  <meta name="theme-color" content="#1D1230">
   <meta name="description" content="MetaLab Pocket: uma experiência de aula protegida para praticar o uso do celular com autonomia.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' blob: data:; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
   <title>MetaLab Pocket — prática protegida</title>
@@ -34,8 +34,33 @@
   <link rel="stylesheet" href="camera.css">
   <link rel="stylesheet" href="phone-model.css">
   <link rel="stylesheet" href="business-apps.css">
+  <link rel="stylesheet" href="student-entry.css">
 </head>
 <body>
+  <section class="student-entry" id="studentEntry" aria-labelledby="entryTitle">
+    <div class="entry-layout">
+      <div class="entry-intro">
+        <span class="entry-kicker">Laboratório de aprendizagem digital</span>
+        <img class="entry-logo" src="assets/metalab-logo.png" alt="MetaLab">
+        <h1 id="entryTitle">Seu espaço para <span>aprender fazendo.</span></h1>
+        <p>Explore um celular virtual, fotografe produtos em 3D e pratique comunicação e segurança digital em um ambiente preparado para a aula.</p>
+        <div class="entry-points"><span>5 módulos</span><span>20 horas</span><span>Experiência protegida</span></div>
+      </div>
+      <div class="entry-card">
+        <span class="entry-step">01 · ENTRADA DO ALUNO</span>
+        <h2>Bem-vindo ao MetaLab Pocket.</h2>
+        <p>Preencha seus dados para começar a experiência.</p>
+        <form id="studentEntryForm">
+          <label>Nome completo<input name="name" type="text" autocomplete="name" minlength="2" maxlength="120" required placeholder="Como você se chama?"></label>
+          <label>E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required placeholder="seuemail@exemplo.com"></label>
+          <label>Data de nascimento<input name="birthDate" type="date" autocomplete="bday" required></label>
+          <button type="submit">Entrar no MetaLab Pocket</button>
+          <p class="entry-message" id="entryMessage" role="alert" aria-live="polite"></p>
+        </form>
+        <p class="entry-privacy"><strong>Ambiente de treino:</strong> seus dados são usados para registrar sua entrada. Os apps do celular são simulações e não acessam redes sociais reais.</p>
+      </div>
+    </div>
+  </section>
   <main class="wrap">
     <header class="topbar">
       <div class="brand"><span class="brand-logo" role="img" aria-label="MetaLab">MetaLab</span></div>
@@ -71,11 +96,12 @@
       </div>
     </section>
     <footer class="bottom"><span><strong>METALAB POCKET</strong> &nbsp; Simulador de aprendizagem</span><span class="right">Conteúdo curado para a aula · sem chamadas externas</span></footer>
-    <p class="privacy-note">A página carrega apenas os modelos incluídos neste site. Os apps do aparelho não acessam redes sociais ou contatos reais; fotos e publicações de treino ficam somente neste navegador e não são enviadas a serviços externos.</p>
+    <p class="privacy-note">O cadastro inicial é enviado ao banco de dados do curso. Os apps do aparelho não acessam redes sociais ou contatos reais; fotos e publicações de treino ficam somente neste navegador e não são enviadas a serviços externos.</p>
   </main>
   <script src="gallery-store.js" defer></script>
   <script src="business-apps.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="student-entry.js" defer></script>
   <script src="camera-lab.js" defer></script>
   <script type="module" src="phone-model.js"></script>
 </body>

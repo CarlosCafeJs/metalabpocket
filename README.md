@@ -4,13 +4,15 @@ Simulador de celular e estúdio de fotografia 3D para aulas protegidas. Os aplic
 
 As fotos criadas no estúdio ficam salvas na galeria local do navegador; o aluno pode escolher onde guardar uma cópia no computador, se o navegador oferecer essa opção. Publicações do Instagram de treino usam o armazenamento local do navegador e podem ser removidas no próprio app.
 
-A identidade visual usa a logo fornecida em `dist/assets/metalab-logo.png` e os tokens compartilhados de `dist/design-tokens.css`. O 3D renderiza quando há interação ou mudança de tamanho; em telas e computadores modestos, a resolução e o mapa de sombras são limitados. A interface respeita a preferência do sistema por movimento reduzido.
+A identidade visual usa a logo fornecida em `dist/assets/metalab-logo.png` e os tokens compartilhados de `dist/design-tokens.css`. A entrada usa o roxo escuro `#1D1230` da imagem fornecida. O 3D renderiza quando há interação ou mudança de tamanho; em telas e computadores modestos, a resolução e o mapa de sombras são limitados. A interface respeita a preferência do sistema por movimento reduzido.
 
 ## Publicar na Vercel
 
-Importe este repositório na Vercel. Use **Framework Preset: Other** e deixe o comando de build vazio. O arquivo `vercel.json` configura a pasta `dist` como saída e permite abrir o estúdio em `/camera-studio`.
+Importe este repositório na Vercel. Use **Framework Preset: Other** e deixe o comando de build vazio. O arquivo `vercel.json` configura a pasta `dist` como saída e permite abrir o estúdio em `/camera-studio`. A pasta `api` contém a função de cadastro do aluno em `/api/students`.
 
-Não é preciso instalar dependências: o código, o renderizador 3D e os modelos `.glb` já estão em `dist`. Para testar localmente, sirva a pasta `dist` com um servidor HTTP estático; abrir o HTML diretamente como arquivo pode impedir o carregamento dos modelos 3D.
+Configure `DATABASE_URL` como variável de ambiente **protegida** na Vercel, usando a URL pública do PostgreSQL Railway. Não coloque a URL no código nem em arquivos versionados. A função cria a tabela `metalab_students` na primeira gravação; o usuário do banco precisa de permissão para criar tabela e inserir registros. A tela de entrada só libera o simulador depois de uma confirmação de gravação. Ela não autentica ou isola alunos: um marcador temporário da aba apenas evita repetir o cadastro durante a sessão. Nome, e-mail e nascimento não são guardados no armazenamento do navegador. As fotos e os dados dos apps fictícios continuam locais.
+
+Execute `npm ci` e `npm test` para verificar a API. Para testar o fluxo completo localmente, use `vercel dev` com `DATABASE_URL` definida fora do repositório. Um servidor HTTP estático ou o endereço anterior do Sites não executa `/api/students`; nesse caso, o formulário informa que o cadastro está indisponível.
 
 ## Créditos dos modelos
 
