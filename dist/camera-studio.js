@@ -13,7 +13,7 @@ const presets = {
   top: { angle: 35, height: 2.9, distance: 3.9 }
 };
 
-let stageRenderer, previewRenderer, scene, productGroup, defaultMug, shoeModel, shoeLoading, phone, ring, stageCamera, phoneCamera;
+let stageRenderer, previewRenderer, scene, productGroup, defaultMug, shoeModel, shoeLoading, phone, phoneScreenTexture, ring, stageCamera, phoneCamera;
 let renderPending = false;
 const captures = [];
 let lastSavedPhoto;
@@ -105,7 +105,21 @@ async function loadPhoneModel(){
     if(size.y<=0)throw new Error('Modelo do celular sem altura');
     model.position.sub(center);
     const holder=new THREE.Group();holder.add(model);holder.scale.setScalar(1.1/size.y);
-    // The model's rear is -Z; phone.lookAt points its +Z toward the product.
+    // Object3D.lookAt aims +Z at the product. Turn the supplied phone so its
+    // rear cameras (-Z in the model) face the product and its screen faces us.
+    holder.rotation.y=Math.PI;
+    const screen=new THREE.Mesh(
+      new THREE.PlaneGeometry(size.x*.75,size.y*.84),
+      new THREE.MeshBasicMaterial({map:phoneScreenTexture,side:THREE.FrontSide,toneMapped:false})
+    );
+    const screenAspect=(size.x*.75)/(size.y*.84);
+    const viewAspect=previewCanvas.clientWidth/previewCanvas.clientHeight||.75;
+    const viewWidth=Math.min(1,screenAspect/viewAspect);
+    phoneScreenTexture.repeat.set(viewWidth,1);
+    phoneScreenTexture.offset.set((1-viewWidth)/2,0);
+    screen.position.set(0,-size.y*.005,size.z*.5+.0008);
+    screen.renderOrder=1;
+    holder.add(screen);
     phone.clear();phone.add(holder);scheduleRender();
   }catch(error){$('stageError').hidden=false;$('stageError').textContent='O modelo 3D do celular não carregou. Reabra o estúdio e tente novamente.';console.warn('Modelo do celular não carregou no estúdio.',error)}
 }
@@ -170,6 +184,8 @@ function makeScene() {
 function setupRenderers() {
   stageRenderer=new THREE.WebGLRenderer({canvas:stageCanvas,antialias:true,powerPreference:'high-performance'});
   previewRenderer=new THREE.WebGLRenderer({canvas:previewCanvas,antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});
+  phoneScreenTexture=new THREE.CanvasTexture(previewCanvas);
+  phoneScreenTexture.colorSpace=THREE.SRGBColorSpace;
   for(const renderer of [stageRenderer,previewRenderer]){
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     renderer.toneMapping=THREE.ACESFilmicToneMapping;
@@ -201,8 +217,9 @@ function render(){
   phone.lookAt(target);
   phoneCamera.position.copy(phone.position);phoneCamera.lookAt(target);
   ring.scale.setScalar(state.distance/3.77);
+  phone.visible=false;previewRenderer.render(scene,phoneCamera);
+  phoneScreenTexture.needsUpdate=true;
   phone.visible=true;stageRenderer.render(scene,stageCamera);
-  phone.visible=false;previewRenderer.render(scene,phoneCamera);phone.visible=true;
 }
 
 function updateFeedback(){
