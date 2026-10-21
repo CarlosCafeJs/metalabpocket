@@ -173,7 +173,7 @@ function render(){
   resizeRenderer(previewRenderer,previewCanvas,phoneCamera);
   const angle=THREE.MathUtils.degToRad(state.angle);
   const x=Math.sin(angle)*state.distance,z=Math.cos(angle)*state.distance;
-  const target=new THREE.Vector3(0,.94,0);
+  const target=new THREE.Vector3(.25,.94,0);
   phone.position.set(x,state.height,z);
   phone.lookAt(target);
   phoneCamera.position.copy(phone.position);phoneCamera.lookAt(target);
