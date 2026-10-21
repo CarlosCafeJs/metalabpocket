@@ -63,4 +63,5 @@
 .camera-sources { font-size:7px; line-height:1.5; color:#7f8997; margin-top:9px; }
 .camera-lab .primary-btn { font-size:10px; padding:10px 12px; }
 .font-large .camera-lab,.font-large .camera-lab p,.font-large .camera-choice-row button { font-size:12px; }
+.app-tile[href] { text-decoration:none; }
 @media (prefers-reduced-motion:reduce) { .map-phone,.mug-art { transition:none; } }

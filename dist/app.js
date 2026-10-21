@@ -23,7 +23,11 @@ const modules=[
     const completed=new Set();let currentPhoto=0,storeCategory='Tudo';
     const photos=[['Fim de tarde no ateliê','p1'],['Café da manhã','p2'],['Peças feitas à mão','p3'],['Verde para a vitrine','p4']];
     const appGrid=document.getElementById('appGrid'),dock=document.getElementById('dock'),appPanel=document.getElementById('appPanel');
-    function iconButton(app,dockItem=false){return `<button class="app-tile" data-app="${app.id}" aria-label="Abrir ${app.name}"><span class="tile-icon ${app.cls}">${app.glyph}</span>${dockItem?'':`<span>${app.name}</span>`}</button>`}
+    function iconButton(app,dockItem=false){
+      const contents=`<span class="tile-icon ${app.cls}">${app.glyph}</span>${dockItem?'':`<span>${app.name}</span>`}`;
+      if(app.id==='camera')return `<a class="app-tile" href="camera-studio.html" target="_blank" rel="noopener" aria-label="Abrir estúdio da câmera 3D em nova aba">${contents}</a>`;
+      return `<button class="app-tile" data-app="${app.id}" aria-label="Abrir ${app.name}">${contents}</button>`;
+    }
     function drawHome(){const main=[...apps.filter(a=>a.built&&a.id!=='ideias'),...apps.filter(a=>!a.built&&installed.has(a.id)),...apps.filter(a=>a.id==='ideias')];appGrid.innerHTML=main.filter(a=>installed.has(a.id)).map(a=>iconButton(a)).join('');appGrid.querySelectorAll('[data-app]').forEach(b=>b.onclick=()=>openApp(b.dataset.app));const dockApps=['curso','galeria','loja','seguranca'].map(id=>apps.find(a=>a.id===id));dock.innerHTML=dockApps.map(a=>iconButton(a,true)).join('');dock.querySelectorAll('[data-app]').forEach(b=>b.onclick=()=>openApp(b.dataset.app));document.getElementById('progressLabel').textContent=`${completed.size} de 5 práticas concluídas nesta sessão`;document.getElementById('progressBar').style.width=`${completed.size*20}%`}
     function appHeader(title){return `<header class="app-top"><button class="back" data-back aria-label="Voltar">‹</button><h2>${title}</h2><span class="widget-tag">AULA</span></header>`}
     function openApp(id){appPanel.classList.add('open');if(id==='curso')renderCourse();else if(id==='galeria')renderGallery();else if(id==='camera')renderCamera();else if(id==='loja')renderStore();else if(id==='seguranca')renderSecurity();else if(id==='vitrine')renderVitrine();else if(id==='mensagens')renderMessages();else if(id==='ajustes')renderSettings();else if(id==='oficina')renderWorkshop();else if(id==='roteiro')renderScript();else if(id==='planejamento')renderPlanner();else if(id==='ideias')renderIdeas();bindBack()}
