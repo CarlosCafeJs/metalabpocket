@@ -13,9 +13,10 @@ const presets = {
   top: { angle: 35, height: 2.9, distance: 3.9 }
 };
 
-let stageRenderer, previewRenderer, scene, productGroup, defaultMug, importedModel, phone, ring, stageCamera, phoneCamera;
+let stageRenderer, previewRenderer, scene, productGroup, defaultMug, shoeModel, shoeLoading, phone, ring, stageCamera, phoneCamera;
 let renderPending = false;
 const captures = [];
+let lastSavedPhoto;
 
 function makeTexture() {
   const canvas = document.createElement('canvas');
@@ -97,22 +98,44 @@ function makeMug() {
   return mug;
 }
 
-function makePhone() {
-  const group = new THREE.Group();
-  const shell = new THREE.Mesh(new THREE.BoxGeometry(.6,1.12,.075), new THREE.MeshStandardMaterial({color:'#1c304c',metalness:.3,roughness:.25}));
-  shell.castShadow=true; group.add(shell);
-  const screen = new THREE.Mesh(new THREE.BoxGeometry(.55,1.02,.009), new THREE.MeshBasicMaterial({color:'#8bb1ae'}));
-  screen.position.z=-.044; group.add(screen);
-  const screenGlow = new THREE.Mesh(new THREE.PlaneGeometry(.45,.72), new THREE.MeshBasicMaterial({color:'#d6e9e5'}));
-  screenGlow.position.set(0,.02,-.051); screenGlow.rotation.y=Math.PI; group.add(screenGlow);
-  const lensBlock = new THREE.Mesh(new THREE.BoxGeometry(.24,.27,.018), new THREE.MeshStandardMaterial({color:'#0b1830',metalness:.4,roughness:.24}));
-  lensBlock.position.set(-.13,.36,.046); group.add(lensBlock);
-  for(const offset of [-.055,.055]){
-    const lens=new THREE.Mesh(new THREE.CylinderGeometry(.043,.043,.015,20),new THREE.MeshStandardMaterial({color:'#07111e',metalness:.45,roughness:.1}));
-    lens.rotation.x=Math.PI/2; lens.position.set(-.13,.36+offset,.061);group.add(lens);
+async function loadPhoneModel(){
+  try{
+    const gltf=await new GLTFLoader().loadAsync('assets/celular.glb');
+    const model=gltf.scene,box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+    if(size.y<=0)throw new Error('Modelo do celular sem altura');
+    model.position.sub(center);
+    const holder=new THREE.Group();holder.add(model);holder.scale.setScalar(1.1/size.y);
+    // The model's rear is -Z; phone.lookAt points its +Z toward the product.
+    phone.clear();phone.add(holder);scheduleRender();
+  }catch(error){$('stageError').hidden=false;$('stageError').textContent='O modelo 3D do celular não carregou. Reabra o estúdio e tente novamente.';console.warn('Modelo do celular não carregou no estúdio.',error)}
+}
+
+async function selectProduct(id){
+  if(id==='shoe'&&!shoeModel){
+    $('productStatus').textContent='Carregando o tênis 3D com suas texturas…';
+    try{
+      if(!shoeLoading)shoeLoading=new GLTFLoader().loadAsync('assets/shoes_test.glb');
+      const gltf=await shoeLoading;
+      const model=gltf.scene,box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+      if(!Number.isFinite(size.length())||size.length()<.001)throw new Error('Modelo do tênis vazio');
+      const scale=2.65/Math.max(size.x,size.y,size.z);
+      model.scale.setScalar(scale);
+      model.position.set(-center.x*scale,-box.min.y*scale,-center.z*scale);
+      model.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
+      shoeModel=model;productGroup.add(model);
+    }catch(error){
+      shoeLoading=null;$('productStatus').textContent='Não foi possível abrir o tênis. A caneca continua disponível.';
+      console.warn('Tênis 3D indisponível.',error);return;
+    }
   }
-  group.scale.setScalar(.85);
-  return group;
+  const shoe=id==='shoe';
+  state.product=shoe?'Tênis de treino':'Caneca de cerâmica';
+  defaultMug.visible=!shoe;if(shoeModel)shoeModel.visible=shoe;
+  document.querySelectorAll('[data-product]').forEach(button=>{const selected=button.dataset.product===id;button.classList.toggle('selected',selected);button.setAttribute('aria-pressed',String(selected))});
+  $('productStatus').textContent=shoe?'Tênis 3D selecionado · couro, costura e solado visíveis.':'Caneca de cerâmica selecionada.';
+  $('productHelper').innerHTML=shoe?'<b>Dica para começar:</b> use 3/4 para revelar o formato, depois fotografe a lateral, os cadarços e o solado. Procure uma luz que mostre a textura sem estourar as partes claras.':'<b>Dica para começar:</b> use “3/4” e uma altura um pouco acima da borda. Assim é possível reconhecer a alça, a abertura e a textura em uma única imagem.';
+  $('angleLesson').textContent=shoe?'Depois da foto principal, registre perfil lateral, traseira, solado e um detalhe dos cadarços ou da costura.':'Depois da foto principal, registre lado, verso e detalhe. Para a caneca, mostre também a alça, a borda e o interior.';
+  updateFeedback();scheduleRender();
 }
 
 function addLights() {
@@ -139,7 +162,7 @@ function makeScene() {
   const ringMat=new THREE.MeshBasicMaterial({color:'#ad7b27',transparent:true,opacity:.55,depthWrite:false});
   ring=new THREE.Mesh(new THREE.RingGeometry(3.75,3.78,128),ringMat);
   ring.rotation.x=-Math.PI/2;ring.position.y=.025;scene.add(ring);
-  phone=makePhone();scene.add(phone);
+  phone=new THREE.Group();scene.add(phone);
   const standLight=new THREE.Mesh(new THREE.PlaneGeometry(1.6,2.6),new THREE.MeshBasicMaterial({color:'#fff1ce',side:THREE.DoubleSide}));
   standLight.position.set(-4,2.6,-.1);standLight.rotation.y=Math.PI/2.8;scene.add(standLight);
 }
@@ -156,7 +179,7 @@ function setupRenderers() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
   }
   stageCamera=new THREE.PerspectiveCamera(39,1,.1,100);
-  stageCamera.position.set(6.3,4.9,8.6);stageCamera.lookAt(0,.85,0);
+  stageCamera.position.set(4.5,4.9,8.6);stageCamera.lookAt(0,.85,0);
   phoneCamera=new THREE.PerspectiveCamera(57,1,.1,50);
 }
 
@@ -185,13 +208,14 @@ function render(){
 function updateFeedback(){
   let title,text;
   const a=Math.abs(state.angle);
-  if(state.height>2.5){title='Vista de cima';text='Boa para mostrar a abertura e o interior. Acrescente outra foto lateral para explicar a altura da peça.'}
-  else if(state.distance<3.1){title='Muito perto';text='Um detalhe pode ficar interessante, mas a peça pode sair do quadro. Afaste um pouco para a foto principal.'}
-  else if(state.distance>5.1){title='Mais longe';text='Há espaço em volta do produto. Aproxime se a peça ficou pequena e o detalhe perdeu força.'}
-  else if(a<20){title='Vista frontal';text='Boa para ler a estampa. A alça pode ficar menos clara; uma foto em 3/4 completa a apresentação.'}
-  else if(a<70){title='Ângulo em 3/4';text='Aqui se percebem a frente, o volume e parte da alça. É um bom candidato para a foto principal.'}
-  else if(a<120){title='Vista lateral';text='Ajuda a entender a profundidade e a alça. Use junto com uma vista frontal para mostrar a estampa.'}
-  else {title='Verso da peça';text='Mostra acabamento e partes que a foto principal esconde. É útil como imagem complementar.'}
+  const shoe=state.product==='Tênis de treino';
+  if(state.height>2.5){title='Vista de cima';text=shoe?'Mostra os cadarços e a abertura. Combine com uma foto lateral para explicar a forma e o solado.':'Boa para mostrar a abertura e o interior. Acrescente outra foto lateral para explicar a altura da peça.'}
+  else if(state.distance<3.1){title='Muito perto';text='Um detalhe pode ficar interessante, mas o produto pode sair do quadro. Afaste um pouco para a foto principal.'}
+  else if(state.distance>5.1){title='Mais longe';text='Há espaço em volta do produto. Aproxime se ele ficou pequeno e os detalhes perderam força.'}
+  else if(a<20){title='Vista frontal';text=shoe?'Observe se a frente e os cadarços estão claros. Uma foto lateral ajuda a mostrar o comprimento do tênis.':'Boa para ler a estampa. A alça pode ficar menos clara; uma foto em 3/4 completa a apresentação.'}
+  else if(a<70){title='Ângulo em 3/4';text=shoe?'A perspectiva ajuda a mostrar volume, material e detalhes. Confira se a ponta e o calcanhar cabem no quadro.':'Aqui se percebem a frente, o volume e parte da alça. É um bom candidato para a foto principal.'}
+  else if(a<120){title='Vista lateral';text=shoe?'O perfil ajuda a explicar o desenho, o solado e a altura. Combine com um detalhe da costura.':'Ajuda a entender a profundidade e a alça. Use junto com uma vista frontal para mostrar a estampa.'}
+  else {title='Verso do produto';text=shoe?'Mostre o calcanhar e o acabamento; uma foto do solado completa a informação.':'Mostra acabamento e partes que a foto principal esconde. É útil como imagem complementar.'}
   $('angleFeedback').innerHTML=`<b>${title}</b><br>${text}`;
 }
 
@@ -220,45 +244,44 @@ function bindControls(){
   stageCanvas.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();if(e.key==='ArrowLeft')state.angle=Math.max(-180,state.angle-5);if(e.key==='ArrowRight')state.angle=Math.min(180,state.angle+5);if(e.key==='ArrowUp')state.height=Math.min(2.9,state.height+.1);if(e.key==='ArrowDown')state.height=Math.max(.7,state.height-.1);syncControls()});
   window.addEventListener('resize',scheduleRender);
   $('capture').addEventListener('click',capture);
-  $('modelFile').addEventListener('change',importGlb);
-  $('resetModel').addEventListener('click',resetModel);
+  document.querySelectorAll('[data-product]').forEach(button=>button.addEventListener('click',()=>selectProduct(button.dataset.product)));
+  $('saveComputer').addEventListener('click',async()=>{
+    if(!lastSavedPhoto)return;
+    try{
+      const result=await window.MetaLabGallery.saveToComputer(lastSavedPhoto.blob,lastSavedPhoto.name);
+      $('saveResult').textContent=result==='saved'?'Cópia salva no local escolhido.':result==='cancelled'?'Tudo bem. A foto continua na Galeria.':'Download iniciado. O navegador define a pasta de destino.';
+    }catch(error){$('saveResult').textContent='Não foi possível salvar a cópia. A foto continua na Galeria.';console.warn(error)}
+  });
+  $('saveLater').addEventListener('click',()=>$('saveDialog').close());
 }
 
-function capture(){
-  render();
-  captures.unshift({src:previewCanvas.toDataURL('image/png'),angle:Math.round(state.angle),height:Math.round(state.height*10)});
-  if(captures.length>4)captures.pop();
-  const holder=$('captures');holder.replaceChildren();
-  captures.forEach((item,i)=>{const img=document.createElement('img');img.src=item.src;img.alt=`Captura de treino ${captures.length-i}: giro ${item.angle} graus, altura ${item.height} centímetros`;img.title=img.alt;holder.append(img)});
-  $('captureCount').textContent=`${captures.length}/4`;
-}
-
-function clearImported(){
-  if(importedModel){productGroup.remove(importedModel);importedModel.traverse(obj=>{if(obj.isMesh){obj.geometry?.dispose();const mats=Array.isArray(obj.material)?obj.material:[obj.material];mats.forEach(mat=>mat?.dispose())}});importedModel=null}
-}
-function resetModel(){clearImported();defaultMug.visible=true;state.product='Caneca de cerâmica';$('modelFile').value='';$('modelStatus').textContent='Modelo padrão carregado · nenhum arquivo enviado.';scheduleRender()}
-async function importGlb(event){
-  const file=event.target.files?.[0];if(!file)return;
-  if(!file.name.toLowerCase().endsWith('.glb')){$('modelStatus').textContent='Escolha um arquivo .glb com texturas incorporadas.';return}
-  if(file.size>25*1024*1024){$('modelStatus').textContent='Arquivo grande demais para a aula (limite: 25 MB).';return}
-  $('modelStatus').textContent='Abrindo modelo local…';
+async function capture(){
+  const button=$('capture');button.disabled=true;
   try{
-    const buffer=await file.arrayBuffer();
-    const model=await new Promise((resolve,reject)=>new GLTFLoader().parse(buffer,'',gltf=>resolve(gltf.scene),reject));
-    const box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3());
-    if(!Number.isFinite(size.length())||size.length()<.001)throw new Error('Modelo vazio');
-    clearImported();
-    const scale=2.2/Math.max(size.x,size.y,size.z);
-    model.scale.setScalar(scale);
-    model.position.set(-(box.min.x+box.max.x)/2*scale,-box.min.y*scale,-(box.min.z+box.max.z)/2*scale);
-    model.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
-    importedModel=model;productGroup.add(model);defaultMug.visible=false;
-    state.product=file.name;$('modelStatus').textContent=`${file.name} · aberto somente nesta aba.`;scheduleRender();
-  }catch(error){$('modelStatus').textContent='Não foi possível abrir o .glb. Verifique se as texturas estão incorporadas.';console.warn('Falha ao abrir modelo local:',error)}
+    render();
+    const blob=await new Promise((resolve,reject)=>previewCanvas.toBlob(value=>value?resolve(value):reject(new Error('Falha ao criar imagem')),'image/png'));
+    const stamp=new Date().toISOString().replace(/[:.]/g,'-');
+    const slug=state.product==='Tênis de treino'?'tenis':'caneca';
+    const record=await window.MetaLabGallery.save({blob,name:`metalab-${slug}-${stamp}.png`,product:state.product,angle:Math.round(state.angle),height:Math.round(state.height*10)});
+    lastSavedPhoto=record;
+    const src=URL.createObjectURL(blob);captures.unshift({src,angle:record.angle,height:record.height});
+    if(captures.length>4){const old=captures.pop();URL.revokeObjectURL(old.src)}
+    const holder=$('captures');holder.replaceChildren();
+    captures.forEach((item,i)=>{const img=document.createElement('img');img.src=item.src;img.alt=`Foto ${captures.length-i}: giro ${item.angle} graus, altura ${item.height} centímetros`;img.title=img.alt;holder.append(img)});
+    $('captureCount').textContent=`${captures.length}/4`;
+    $('saveResult').textContent='';
+    const picker=window.MetaLabGallery.hasSavePicker();
+    $('saveComputer').textContent=picker?'Escolher local e salvar':'Baixar no computador';
+    $('saveHint').textContent=picker?'Ao continuar, escolha a pasta e o nome do arquivo na janela do computador.':'Este navegador não oferece escolha de pasta pela página. Ao baixar, ele usará sua configuração de downloads.';
+    $('saveDialog').showModal();
+  }catch(error){
+    $('angleFeedback').innerHTML='<b>Não foi possível salvar a foto.</b><br>Verifique se o navegador permite armazenamento local e tente novamente.';
+    console.warn('Falha ao salvar foto:',error);
+  }finally{button.disabled=false}
 }
 
 try{
-  makeScene();setupRenderers();bindControls();syncControls();
+  makeScene();setupRenderers();bindControls();syncControls();loadPhoneModel();
 }catch(error){
   console.error(error);
   $('stageError').hidden=false;

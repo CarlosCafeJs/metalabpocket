@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#142744">
   <meta name="description" content="MetaLab Pocket: uma experiência de aula protegida para praticar o uso do celular com autonomia.">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' blob: data:; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
   <title>MetaLab Pocket — prática protegida</title>
   <style>
     :root{color-scheme:light;--navy:#142744;--navy2:#203a61;--gold:#f6b737;--gold2:#ffe2a0;--cream:#faf7f0;--paper:#fffdf8;--ink:#18243a;--muted:#667184;--line:#e6e0d5;--green:#428a67;--phone-tilt:-12deg;--phone-y:2deg}
@@ -28,6 +28,7 @@
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
   </style>
   <link rel="stylesheet" href="camera.css">
+  <link rel="stylesheet" href="phone-model.css">
 </head>
 <body>
   <main class="wrap">
@@ -47,6 +48,7 @@
       <div class="stage" id="stage" aria-label="Celular de treinamento MetaLab em 3D">
         <div class="stage-glow"></div><div class="stage-ring"></div><span class="spark one">✳</span><span class="spark two">✦</span><span class="spark three">·</span>
         <div class="phone-wrap" id="phone">
+          <canvas id="phoneModelCanvas" class="phone-model-canvas" aria-hidden="true"></canvas>
           <div class="phone-side"></div><div class="hardware-button"></div><div class="hardware-button left"></div>
           <div class="phone-back" aria-label="Traseira do aparelho MetaLab"><div class="back-glow"></div><div class="camera-island"><span class="lens"></span><span class="lens"></span><span class="lens small"></span><span class="flash"></span></div><div class="back-brand"><span class="back-brand-mark">M</span><strong>METALAB</strong><small>POCKET · EDIÇÃO AULA</small></div><span class="back-legal">SIMULADOR DIGITAL · SEM CÂMERA REAL</span></div>
           <div class="phone-frame"><div class="phone-screen" id="screen">
@@ -66,9 +68,11 @@
       </div>
     </section>
     <footer class="bottom"><span><strong>METALAB POCKET</strong> &nbsp; Simulador de aprendizagem</span><span class="right">Conteúdo curado para a aula · sem chamadas externas</span></footer>
-    <p class="privacy-note">A página precisa carregar para abrir a simulação. Depois disso, as atividades do aparelho funcionam sem chamadas de rede; instalações, rascunhos e respostas ficam somente nesta sessão e não são enviados nem publicados.</p>
+    <p class="privacy-note">A página carrega apenas os modelos incluídos neste site. Os apps do aparelho não acessam redes sociais ou contatos reais; fotos de treino ficam na Galeria local deste navegador e não são enviadas nem publicadas.</p>
   </main>
+  <script src="gallery-store.js" defer></script>
   <script src="app.js" defer></script>
   <script src="camera-lab.js" defer></script>
+  <script type="module" src="phone-model.js"></script>
 </body>
 </html>

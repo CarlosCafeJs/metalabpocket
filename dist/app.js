@@ -50,6 +50,7 @@ const modules=[
     // Everything in this simulator stays in page memory. A captured scene is a
     // reference to a prepared image, never an image from the visitor's device.
     const favorites=new Set(),capturedScenes=[];
+    let savedGalleryUrls=[];
     const planDone=new Set(),planDays=[
       ['SEG','Escolher um produto'],['TER','Fazer uma foto de treino'],
       ['QUA','Escrever uma legenda curta'],['QUI','Rascunhar um roteiro'],
@@ -61,18 +62,51 @@ const modules=[
     function renderGallery(){
       const p=photos[currentPhoto];
       appPanel.innerHTML=`${appHeader('Galeria de prática')}<div class="app-body">
-        <p>Escolha uma cena, compare enquadramentos e use a imagem em uma atividade.</p>
+        <section class="gallery-saved-section" id="savedGallerySection" aria-label="Fotos tiradas no estúdio 3D"><h3>Fotos da minha câmera <small>Carregando…</small></h3></section>
+        <p>Exemplos da aula: escolha uma cena, compare enquadramentos e use a imagem em uma atividade.</p>
         <div class="photo-grid">${photos.map((photo,i)=>`<button class="photo-card ${photo[1]} ${currentPhoto===i?'selected':''}" data-photo="${i}" aria-label="Selecionar ${photo[0]}"><span>${photo[0]}</span></button>`).join('')}</div>
         <div class="photo-preview ${p[1]}" role="img" aria-label="${p[0]}"></div>
         <div class="photo-tip"><b>${p[0]}</b> · Observe a luz, o fundo e o assunto principal. ${favorites.has(currentPhoto)?'★ Favorita nesta sessão.':''}</div>
         <div class="inline-actions"><button class="secondary-btn" id="favoritePhoto">${favorites.has(currentPhoto)?'★ Remover favorita':'☆ Favoritar'}</button><button class="primary-btn" id="usePhoto">Usar na Oficina</button></div>
-        <div class="notice-box">${capturedScenes.length} captura${capturedScenes.length===1?'':'s'} de treino nesta sessão. A câmera usa apenas cenas preparadas.</div>
+        <div class="notice-box">Fotos do estúdio ficam somente neste navegador. Nenhuma imagem é enviada ou publicada.</div>
       </div>`;
       bindBack();
       appPanel.querySelectorAll('[data-photo]').forEach(b=>b.onclick=()=>{currentPhoto=Number(b.dataset.photo);renderGallery()});
       document.getElementById('favoritePhoto').onclick=()=>{favorites.has(currentPhoto)?favorites.delete(currentPhoto):favorites.add(currentPhoto);renderGallery()};
       document.getElementById('usePhoto').onclick=()=>{installed.add('oficina');drawHome();openApp('oficina')};
+      renderSavedGallery();
     }
+
+    async function renderSavedGallery(){
+      const section=document.getElementById('savedGallerySection');if(!section)return;
+      savedGalleryUrls.forEach(url=>URL.revokeObjectURL(url));savedGalleryUrls=[];
+      try{
+        const records=await window.MetaLabGallery.list();
+        if(document.getElementById('savedGallerySection')!==section)return;
+        const heading=document.createElement('h3');heading.textContent='Fotos da minha câmera';
+        const count=document.createElement('small');count.textContent=`${records.length} foto${records.length===1?'':'s'}`;heading.append(count);
+        section.replaceChildren(heading);
+        if(!records.length){const empty=document.createElement('p');empty.className='gallery-empty';empty.textContent='Tire uma foto no Estúdio 3D para vê-la aqui.';section.append(empty);return}
+        const grid=document.createElement('div');grid.className='saved-photo-grid';
+        const detail=document.createElement('div');detail.className='saved-photo-detail';detail.hidden=true;
+        records.forEach((record,index)=>{
+          const url=URL.createObjectURL(record.blob);savedGalleryUrls.push(url);
+          const button=document.createElement('button');button.type='button';button.className='saved-photo';button.setAttribute('aria-label',`Abrir foto ${index+1} de ${record.product||'produto'}`);
+          const img=document.createElement('img');img.src=url;img.alt=record.product||'Foto de produto';button.append(img);grid.append(button);
+          button.onclick=()=>{
+            grid.querySelectorAll('button').forEach(item=>item.classList.remove('selected'));button.classList.add('selected');
+            const large=document.createElement('img');large.src=url;large.alt=img.alt;
+            const caption=document.createElement('p');caption.textContent=`${record.product||'Produto'} · ângulo ${record.angle??0}° · ${new Date(record.createdAt).toLocaleString('pt-BR')}`;
+            const save=document.createElement('button');save.type='button';save.className='secondary-btn';save.textContent='Salvar cópia no computador';
+            const result=document.createElement('p');
+            save.onclick=async()=>{try{const status=await window.MetaLabGallery.saveToComputer(record.blob,record.name||'metalab-foto.png');result.textContent=status==='saved'?'Cópia salva.':status==='cancelled'?'A foto continua na Galeria.':'Download iniciado; o navegador define a pasta.'}catch(error){result.textContent='Não foi possível baixar esta cópia.'}};
+            detail.replaceChildren(large,caption,save,result);detail.hidden=false;
+          };
+        });
+        section.append(grid,detail);
+      }catch(error){section.innerHTML='<h3>Fotos da minha câmera</h3><p class="gallery-empty">A Galeria local não está disponível neste navegador.</p>';console.warn(error)}
+    }
+    window.addEventListener('metalab-gallery-updated',()=>{if(document.getElementById('savedGallerySection'))renderSavedGallery()});
 
     function renderCamera(message=''){
       const p=photos[currentPhoto];
@@ -157,6 +191,8 @@ const modules=[
     }
 
     drawHome();
+    if(location.hash==='#galeria')openApp('galeria');
+    window.addEventListener('hashchange',()=>{if(location.hash==='#galeria')openApp('galeria')});
     document.getElementById('gesture').onclick=closeApp;
     const phone=document.getElementById('phone'),turnBtn=document.getElementById('turnBtn');
     document.getElementById('homeBtn').onclick=()=>{phone.classList.remove('show-back');turnBtn.textContent='⤢ Ver traseira';turnBtn.setAttribute('aria-pressed','false');closeApp()};
