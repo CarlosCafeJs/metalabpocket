@@ -24,7 +24,7 @@ const productLoads = new Map();
 const productInfo = {
   mug: { name: 'Caneca de cerâmica', file: 'assets/caneca.glb', loading: 'Carregando a caneca 3D…', ready: 'Caneca 3D selecionada · observe a forma, a alça e o acabamento.', hint: 'Use “3/4” para mostrar a alça, o formato e a marca discreta. Inclua uma foto de cima para mostrar o interior.', lesson: 'Depois da foto principal, registre o lado, o verso e um detalhe. Mostre também a alça, a borda e o interior.' },
   shoe: { name: 'Tênis de treino', file: 'assets/shoes_test.glb', loading: 'Carregando o tênis 3D com suas texturas…', ready: 'Tênis 3D selecionado · couro, costura e solado visíveis.', hint: 'Use “3/4” para revelar o formato, depois fotografe a lateral, os cadarços e o solado. Procure uma luz que mostre a textura.', lesson: 'Depois da foto principal, registre perfil lateral, traseira, solado e um detalhe dos cadarços ou da costura.' },
-  shirt: { name: 'Camisas dobradas', file: 'assets/camisas-dobradas.glb', loading: 'Carregando as camisas 3D e suas texturas…', ready: 'Camisas dobradas selecionadas · observe tecido, dobras e estampa.', hint: 'Comece com a vista de cima para mostrar a composição das cores. Faça outra foto lateral para revelar a altura da pilha e as dobras.', lesson: 'Fotografe de cima, em 3/4 e de lado. Mostre a textura do tecido, a estampa e o acabamento sem esconder as peças de baixo.' }
+  shirt: { name: 'Camisas dobradas', file: 'assets/camisas-dobradas.glb', loading: 'Carregando as camisas 3D e suas texturas…', ready: 'Camisas dobradas selecionadas · observe tecido, cores e dobras.', hint: 'Comece com a vista de cima para mostrar a composição simétrica das cores. Faça outra foto lateral para revelar a altura da pilha e as dobras.', lesson: 'Fotografe de cima, em 3/4 e de lado. Mostre a textura do tecido, a organização das peças e o acabamento sem esconder as camisas de baixo.' }
 };
 
 function showPreviewPhone(model,size){
@@ -75,20 +75,13 @@ async function loadProduct(id){
     model.position.set(-center.x*scale,-box.min.y*scale,-center.z*scale);
     model.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
     const item=new THREE.Group();item.add(model);
-    if(id==='mug'||id==='shirt'){
+    if(id==='mug'){
       try{
         const logo=await getLogoTexture();
         const material=new THREE.MeshBasicMaterial({map:logo,transparent:true,alphaTest:.08,depthWrite:false,side:THREE.DoubleSide,toneMapped:false});
-        if(id==='mug'){
-          const radius=size.z*scale*.51;
-          const mark=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,.53,48,1,true,-.56,1.12),material);
-          mark.position.set(-center.x*scale,.82,-center.z*scale);mark.renderOrder=2;item.add(mark);
-        }else{
-          const mark=new THREE.Mesh(new THREE.PlaneGeometry(.72,.72),material);
-          mark.rotation.x=-Math.PI/2;
-          mark.position.set(-center.x*scale+.3,size.y*scale+.012,-center.z*scale+.08);
-          mark.renderOrder=2;item.add(mark);
-        }
+        const radius=size.z*scale*.51;
+        const mark=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,.53,48,1,true,-.56,1.12),material);
+        mark.position.set(-center.x*scale,.82,-center.z*scale);mark.renderOrder=2;item.add(mark);
       }catch(error){console.warn('Logo MetaLab indisponível para a peça.',error)}
     }
     item.visible=false;productGroup.add(item);productModels.set(id,item);return item;
@@ -217,7 +210,7 @@ function updateFeedback(){
   let title,text;
   const a=Math.abs(state.angle);
   const shoe=state.productId==='shoe',shirt=state.productId==='shirt';
-  if(state.height>2.5){title='Vista de cima';text=shirt?'Revela cores, dobras e estampa. Complete com uma foto em 3/4 para mostrar a altura da pilha.':shoe?'Mostra os cadarços e a abertura. Combine com uma foto lateral para explicar a forma e o solado.':'Boa para mostrar a abertura e o interior. Acrescente outra foto lateral para explicar a altura da peça.'}
+  if(state.height>2.5){title='Vista de cima';text=shirt?'Revela a organização simétrica, as cores e as dobras. Complete com uma foto em 3/4 para mostrar a altura da pilha.':shoe?'Mostra os cadarços e a abertura. Combine com uma foto lateral para explicar a forma e o solado.':'Boa para mostrar a abertura e o interior. Acrescente outra foto lateral para explicar a altura da peça.'}
   else if(state.distance<3.1){title='Muito perto';text='Um detalhe pode ficar interessante, mas o produto pode sair do quadro. Afaste um pouco para a foto principal.'}
   else if(state.distance>5.1){title='Mais longe';text='Há espaço em volta do produto. Aproxime se ele ficou pequeno e os detalhes perderam força.'}
   else if(a<20){title='Vista frontal';text=shirt?'Mostra a frente da pilha. Inclua uma vista de cima para deixar claras as cores e a textura do tecido.':shoe?'Observe se a frente e os cadarços estão claros. Uma foto lateral ajuda a mostrar o comprimento do tênis.':'Mostra a forma da caneca. Uma foto em 3/4 deixa a alça e a marca mais claras.'}

@@ -1,6 +1,8 @@
 # MetaLab Pocket
 
-Simulador de celular e estúdio de fotografia 3D para aulas protegidas. Os aplicativos, a loja e as fotos de exemplo fazem parte da simulação. As fotos criadas no estúdio ficam salvas na galeria local do navegador; o aluno pode escolher onde guardar uma cópia no computador, se o navegador oferecer essa opção.
+Simulador de celular e estúdio de fotografia 3D para aulas protegidas. Os aplicativos e a loja fazem parte da simulação. O WhatsApp Business de treino permite praticar conversas, catálogo, perfil, etiquetas e respostas rápidas; o Instagram de treino aceita fotos do computador e legendas, guardadas apenas no navegador. Nenhum dos dois acessa serviços ou contatos reais. O modo foco amplia o celular somente na tela inicial.
+
+As fotos criadas no estúdio ficam salvas na galeria local do navegador; o aluno pode escolher onde guardar uma cópia no computador, se o navegador oferecer essa opção. Publicações do Instagram de treino usam o armazenamento local do navegador e podem ser removidas no próprio app.
 
 ## Publicar na Vercel
 

@@ -26,9 +26,11 @@
     @media(max-width:870px){.phone-wrap{--phone-scale:.95}}
     @media(max-width:520px){.phone-wrap{--phone-scale:.86}}
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+    .home-title{margin-top:22px;font-size:23px}.app-grid{margin-top:42px}.focus-stage{position:fixed;inset:0;width:100vw;height:100dvh;margin:0!important;z-index:30;background:radial-gradient(circle at center,#344d70 0,#142744 58%,#0b1525 100%)}.focus-stage .stage-ring{border-color:#a9b8c7}.focus-stage .stage-glow{background:radial-gradient(circle,#f6b73730,transparent 69%)}.focus-stage .spark{color:#ffe2a0}.focus-stage .caption{color:#d5dce7;bottom:8px;right:15px}.focus-stage .controls{bottom:12px;flex-wrap:wrap;justify-content:center;width:min(96vw,420px)}.focus-stage .controls button{font-size:10px;padding:10px 13px}.focus-stage .focus-zoom{display:flex}.focus-zoom{display:none;align-items:center;gap:5px;border-radius:20px;background:#fffdf5e8;padding:3px 9px;color:#34435b;font-size:9px}.focus-zoom input{width:84px;accent-color:#d9a328}.focus-stage .phone-wrap{--phone-scale:var(--focus-scale,1.15)}body.focus-active{overflow:hidden}.focus-stage #focusBtn{background:#fff0c7}.focus-stage .phone-wrap.show-back{--phone-scale:var(--focus-scale,1.15)}
   </style>
   <link rel="stylesheet" href="camera.css">
   <link rel="stylesheet" href="phone-model.css">
+  <link rel="stylesheet" href="business-apps.css">
 </head>
 <body>
   <main class="wrap">
@@ -41,7 +43,7 @@
         <div class="eyebrow">Um celular para aprender fazendo</div>
         <h1>Prática digital,<br>passo a <span>passo.</span></h1>
         <p class="lead">Explore um Android fictício criado para acompanhar a formação MetaLab. Treine câmera, galeria, segurança, marketing e criação de conteúdo com exemplos preparados para a aula.</p>
-        <div class="key-rule"><span>✦</span><span><strong>Espaço de aprendizagem protegido.</strong> Os apps são simulações: sem navegador, feeds abertos, contatos reais, links externos ou publicação.</span></div>
+        <div class="key-rule"><span>✦</span><span><strong>Espaço de aprendizagem protegido.</strong> Os apps são simulações: sem navegador, feeds abertos, contatos reais, links externos ou publicação fora deste aparelho.</span></div>
         <div class="stat-row"><div class="stat"><b>5 módulos</b><small>Trilha MetaLab</small></div><div class="stat"><b>20 horas</b><small>Formação completa</small></div><div class="stat"><b>70% prática</b><small>Aprender fazendo</small></div></div>
         <div class="lesson-steps" aria-label="Etapas da prática"><span>1</span><i>→</i><span>2</span><i>→</i><span>3</span><i>→</i><span>4</span><i>→</i><span>5</span><small class="lesson-label">explorar · praticar · revisar</small></div>
       </div>
@@ -55,8 +57,7 @@
             <div class="wallpaper"></div><div class="statusbar"><span>9:41</span><span class="status-shield">✦ MODO AULA</span><span class="status-right">▮ ▮ 100%</span></div>
             <section class="home" id="home">
               <div class="greeting"><span>Bom dia, <strong>estudante</strong></span><span class="avatar">M</span></div>
-              <div class="home-title">MetaLab Pocket</div><div class="home-sub">Seu espaço de treino para hoje.</div>
-              <div class="progress-widget"><div class="widget-top"><span><b>Trilha do curso</b><br><small>Conteúdo de demonstração</small></span><span class="widget-tag">MÓDULO 1</span></div><div class="widget-module">Meu celular como ferramenta do negócio</div><div class="widget-detail" id="progressLabel">0 de 5 práticas concluídas nesta sessão</div><div class="progress-line"><i id="progressBar"></i></div></div>
+              <div class="home-title">MetaLab Pocket</div>
               <div class="app-grid" id="appGrid" aria-label="Aplicativos fictícios"></div>
               <div class="dock" id="dock"></div>
             </section>
@@ -64,13 +65,14 @@
             <div class="gesture" id="gesture" title="Voltar à tela inicial"></div>
           </div></div>
         </div>
-        <div class="controls"><button id="homeBtn">⌂ Tela inicial</button><button id="turnBtn" aria-pressed="false">⤢ Ver traseira</button></div><div class="caption">Toque nos apps para explorar</div>
+        <div class="controls"><button id="homeBtn">⌂ Tela inicial</button><button id="turnBtn" aria-pressed="false">⤢ Ver traseira</button><button id="focusBtn" aria-pressed="false">⛶ Modo foco</button><label class="focus-zoom" for="focusZoom">Zoom <input id="focusZoom" type="range" min="85" max="145" value="115" aria-label="Aproximar celular"></label></div><div class="caption">Toque nos apps para explorar</div>
       </div>
     </section>
     <footer class="bottom"><span><strong>METALAB POCKET</strong> &nbsp; Simulador de aprendizagem</span><span class="right">Conteúdo curado para a aula · sem chamadas externas</span></footer>
-    <p class="privacy-note">A página carrega apenas os modelos incluídos neste site. Os apps do aparelho não acessam redes sociais ou contatos reais; fotos de treino ficam na Galeria local deste navegador e não são enviadas nem publicadas.</p>
+    <p class="privacy-note">A página carrega apenas os modelos incluídos neste site. Os apps do aparelho não acessam redes sociais ou contatos reais; fotos e publicações de treino ficam somente neste navegador e não são enviadas a serviços externos.</p>
   </main>
   <script src="gallery-store.js" defer></script>
+  <script src="business-apps.js" defer></script>
   <script src="app.js" defer></script>
   <script src="camera-lab.js" defer></script>
   <script type="module" src="phone-model.js"></script>
