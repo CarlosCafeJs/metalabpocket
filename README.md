@@ -7,3 +7,7 @@ Simulador de celular e estúdio de fotografia 3D para aulas protegidas. Os aplic
 Importe este repositório na Vercel. Use **Framework Preset: Other** e deixe o comando de build vazio. O arquivo `vercel.json` configura a pasta `dist` como saída e permite abrir o estúdio em `/camera-studio`.
 
 Não é preciso instalar dependências: o código, o renderizador 3D e os modelos `.glb` já estão em `dist`. Para testar localmente, sirva a pasta `dist` com um servidor HTTP estático; abrir o HTML diretamente como arquivo pode impedir o carregamento dos modelos 3D.
+
+## Créditos dos modelos
+
+A caneca 3D (“005 Mug”) é de **eduterrataca**, disponibilizada sob **CC BY 4.0**: https://sketchfab.com/3d-models/005-mug-eed5aeb8856844619776cece35376d70. O tênis, as camisas, o celular e a logo foram fornecidos para este projeto. As texturas das camisas já estão embutidas no arquivo `camisas-dobradas.glb`.

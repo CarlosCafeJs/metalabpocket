@@ -21,7 +21,7 @@
       <div class="lesson-pill"><span>01</span><div><b>Seu desafio</b><small>Mostrar forma, material e um detalhe que diferencie o produto.</small></div></div>
     </section>
 
-    <section class="product-panel" aria-label="Escolher produto para fotografar"><div><span class="step">OBJETOS DA AULA</span><h2>O que vamos fotografar?</h2><p id="productStatus" role="status">Caneca de cerâmica selecionada.</p></div><div class="product-choices"><button type="button" data-product="mug" class="selected" aria-pressed="true"><span class="product-icon mug-icon" aria-hidden="true">◕</span><span><b>Caneca</b><small>Cerâmica com estampa</small></span></button><button type="button" data-product="shoe" aria-pressed="false"><span class="product-icon shoe-icon" aria-hidden="true">◡</span><span><b>Tênis</b><small>Modelo 3D com textura</small></span></button></div></section>
+    <section class="product-panel" aria-label="Escolher produto para fotografar"><div><span class="step">OBJETOS DA AULA</span><h2>O que vamos fotografar?</h2><p id="productStatus" role="status">Carregando a caneca 3D…</p></div><div class="product-choices"><button type="button" data-product="mug" class="selected" aria-pressed="true"><span class="product-icon mug-icon" aria-hidden="true">◕</span><span><b>Caneca</b><small>Modelo 3D com marca</small></span></button><button type="button" data-product="shoe" aria-pressed="false"><span class="product-icon shoe-icon" aria-hidden="true">◡</span><span><b>Tênis</b><small>Modelo 3D com textura</small></span></button><button type="button" data-product="shirt" aria-pressed="false"><span class="product-icon shirt-icon" aria-hidden="true">▤</span><span><b>Camisas</b><small>Tecido e dobras em 3D</small></span></button></div></section>
 
     <section class="workspace" aria-label="Simulador de fotografia em três dimensões">
       <div class="scene-column">
@@ -35,12 +35,12 @@
           <label>Altura do celular <output id="heightValue" for="height">15 cm</output><input id="height" type="range" min="7" max="29" value="15"></label>
           <label>Distância <output id="distanceValue" for="distance">Média</output><input id="distance" type="range" min="27" max="55" value="38"></label>
         </div>
-        <div class="helper" id="productHelper"><b>Dica para começar:</b> use “3/4” e uma altura um pouco acima da borda. Assim é possível reconhecer a alça, a abertura e a textura em uma única imagem.</div>
+        <div class="helper" id="productHelper"><b>Dica para começar:</b> use “3/4” para mostrar a alça, o formato e a marca discreta. Inclua uma foto de cima para mostrar o interior.</div>
       </div>
 
       <aside class="preview-column" aria-label="Visor do celular virtual">
         <div class="preview-heading"><div><span class="step">VISOR AO VIVO</span><h2>O que o celular vê</h2></div><span class="sim-chip">SIMULAÇÃO</span></div>
-        <div class="device" id="previewDevice" aria-label="Celular 3D com visor de câmera interativo"><canvas id="previewPhoneModel" class="preview-phone-model" aria-hidden="true"></canvas><div class="device-interface"><div class="device-top"><span>9:41</span><span>▮ ▮ 100%</span></div><div class="viewfinder"><canvas id="preview" aria-label="Prévia tridimensional da fotografia conforme a posição do celular"></canvas><div class="grid-lines" aria-hidden="true"></div><span class="preview-badge">META<span>LAB</span> · AULA</span></div><div class="device-bottom"><span>FOTO</span><button type="button" id="capture" class="shutter" aria-label="Fotografar e salvar na galeria do celular"></button><span>3D</span></div><div class="gesture-bar"></div></div></div>
+        <div class="device" id="previewDevice" aria-label="Celular 3D com visor de câmera interativo"><canvas id="previewPhoneModel" class="preview-phone-model" aria-hidden="true"></canvas><div class="device-interface"><div class="device-top"><span>9:41</span><span>▮ ▮ 100%</span></div><div class="viewfinder"><canvas id="preview" aria-label="Prévia tridimensional da fotografia conforme a posição do celular"></canvas><div class="grid-lines" aria-hidden="true"></div><span class="preview-badge">META<span>LAB</span> · AULA</span></div><div class="device-bottom"><span>FOTO</span><button type="button" id="capture" class="shutter" aria-label="Fotografar e salvar na galeria do celular" disabled></button><span>3D</span></div><div class="gesture-bar"></div></div></div>
         <div id="angleFeedback" class="feedback" role="status" aria-live="polite"></div>
         <div class="capture-section"><div class="capture-head"><h3>Últimas fotos</h3><span id="captureCount">0/4</span></div><div id="captures" class="capture-list"><p>Toque no botão da câmera. A foto será salva na Galeria do celular.</p></div><a class="gallery-link" href="index.html#galeria" target="_blank" rel="noopener">Abrir Galeria do celular ↗</a></div>
       </aside>
@@ -53,7 +53,7 @@
       <article><span class="number">04</span><h3>Conte a verdade do produto</h3><p>Uma boa vitrine combina foto clara com descrição simples: material, tamanho, cor e uso. Confira esses dados antes de publicar fora desta aula.</p></article>
     </section>
 
-    <footer>MetaLab Pocket · simulação educativa. Os modelos são preparados para a aula; a página não acessa a câmera real nem envia imagens ou arquivos para fora.</footer>
+    <footer>MetaLab Pocket · simulação educativa. A página não acessa a câmera real nem envia imagens ou arquivos para fora.<br>Modelo da caneca: eduterrataca · CC BY 4.0.</footer>
   </main>
   <dialog id="saveDialog" class="save-dialog" aria-labelledby="saveTitle"><h2 id="saveTitle">Foto salva na Galeria ✓</h2><p>Sua imagem já está no celular fictício. Quer guardar também uma cópia no computador?</p><p id="saveHint" class="save-hint"></p><div class="dialog-actions"><button type="button" id="saveComputer" class="save-primary">Escolher local e salvar</button><button type="button" id="saveLater">Agora não</button></div><a href="index.html#galeria" target="_blank" rel="noopener">Ver na Galeria do celular ↗</a><p id="saveResult" role="status"></p></dialog>
   <script src="gallery-store.js" defer></script>

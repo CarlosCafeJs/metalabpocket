@@ -4,7 +4,7 @@ import { GLTFLoader } from './vendor/GLTFLoader.js';
 const $ = (id) => document.getElementById(id);
 const stageCanvas = $('stage');
 const previewCanvas = $('preview');
-const state = { angle: 0, height: 1.5, distance: 3.8, product: 'Caneca de cerâmica' };
+const state = { angle: 0, height: 1.5, distance: 3.8, product: 'Caneca de cerâmica', productId: 'mug' };
 const presets = {
   front: { angle: 0, height: 1.5, distance: 3.8 },
   threequarter: { angle: 42, height: 1.75, distance: 4.1 },
@@ -13,10 +13,19 @@ const presets = {
   top: { angle: 35, height: 2.9, distance: 3.9 }
 };
 
-let stageRenderer, previewRenderer, scene, productGroup, defaultMug, shoeModel, shoeLoading, phone, phoneScreenTexture, ring, stageCamera, phoneCamera;
+let stageRenderer, previewRenderer, scene, productGroup, phone, phoneScreenTexture, ring, stageCamera, phoneCamera;
 let renderPending = false;
 const captures = [];
 let lastSavedPhoto;
+let requestedProduct = 'mug';
+let logoTexturePromise;
+const productModels = new Map();
+const productLoads = new Map();
+const productInfo = {
+  mug: { name: 'Caneca de cerâmica', file: 'assets/caneca.glb', loading: 'Carregando a caneca 3D…', ready: 'Caneca 3D selecionada · observe a forma, a alça e o acabamento.', hint: 'Use “3/4” para mostrar a alça, o formato e a marca discreta. Inclua uma foto de cima para mostrar o interior.', lesson: 'Depois da foto principal, registre o lado, o verso e um detalhe. Mostre também a alça, a borda e o interior.' },
+  shoe: { name: 'Tênis de treino', file: 'assets/shoes_test.glb', loading: 'Carregando o tênis 3D com suas texturas…', ready: 'Tênis 3D selecionado · couro, costura e solado visíveis.', hint: 'Use “3/4” para revelar o formato, depois fotografe a lateral, os cadarços e o solado. Procure uma luz que mostre a textura.', lesson: 'Depois da foto principal, registre perfil lateral, traseira, solado e um detalhe dos cadarços ou da costura.' },
+  shirt: { name: 'Camisas dobradas', file: 'assets/camisas-dobradas.glb', loading: 'Carregando as camisas 3D e suas texturas…', ready: 'Camisas dobradas selecionadas · observe tecido, dobras e estampa.', hint: 'Comece com a vista de cima para mostrar a composição das cores. Faça outra foto lateral para revelar a altura da pilha e as dobras.', lesson: 'Fotografe de cima, em 3/4 e de lado. Mostre a textura do tecido, a estampa e o acabamento sem esconder as peças de baixo.' }
+};
 
 function showPreviewPhone(model,size){
   const canvas=$('previewPhoneModel');
@@ -47,84 +56,44 @@ function showPreviewPhone(model,size){
   draw();
 }
 
-function makeTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024; canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createLinearGradient(0, 0, 0, 512);
-  grad.addColorStop(0, '#c17b4e'); grad.addColorStop(.4, '#b97246'); grad.addColorStop(1, '#9a5c3e');
-  ctx.fillStyle = grad; ctx.fillRect(0, 0, 1024, 512);
-  let seed = 29;
-  function random() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
-  for (let i = 0; i < 8500; i++) {
-    const x = random() * 1024, y = random() * 512;
-    const r = .2 + random() * 2.3;
-    ctx.fillStyle = random() > .55 ? `rgba(255,236,202,${.04 + random() * .15})` : `rgba(69,35,28,${.025 + random() * .11})`;
-    ctx.beginPath(); ctx.ellipse(x, y, r * 1.5, r, 0, 0, Math.PI * 2); ctx.fill();
-  }
-  for (let i = 0; i < 42; i++) {
-    const y = random() * 512;
-    ctx.strokeStyle = `rgba(255,224,181,${.02 + random() * .06})`;
-    ctx.lineWidth = .5 + random() * 2;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.bezierCurveTo(300, y + 4, 700, y - 4, 1024, y + 2); ctx.stroke();
-  }
-  // A painted band and asymmetrical leaf make the rotation easy to read.
-  ctx.fillStyle = '#243b53'; ctx.fillRect(0, 75, 1024, 18); ctx.fillRect(0, 385, 1024, 11);
-  ctx.save(); ctx.translate(520, 245);
-  ctx.fillStyle = '#f8ead0'; ctx.beginPath(); ctx.ellipse(0, 0, 155, 106, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#233e55'; ctx.lineWidth = 4; ctx.stroke();
-  ctx.fillStyle = '#243b53'; ctx.textAlign = 'center';
-  ctx.font = '700 31px Georgia,serif'; ctx.fillText('ATELIÊ', 0, -13);
-  ctx.font = '700 42px Georgia,serif'; ctx.fillText('AURORA', 0, 38);
-  ctx.restore();
-  for (const [x,y,a] of [[245,225,-.3],[785,270,.55]]) {
-    ctx.save(); ctx.translate(x,y); ctx.rotate(a); ctx.fillStyle='#324d52';
-    ctx.beginPath(); ctx.ellipse(-20,-13,48,18,-.45,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(24,18,44,17,.48,0,Math.PI*2); ctx.fill();
-    ctx.strokeStyle='#30464d';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(-50,-45);ctx.lineTo(50,48);ctx.stroke();ctx.restore();
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 8;
-  return texture;
+function getLogoTexture(){
+  if(!logoTexturePromise)logoTexturePromise=new THREE.TextureLoader().loadAsync('assets/metalab-logo.png').then(texture=>{texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=8;return texture});
+  return logoTexturePromise;
 }
 
-function makeFrontMark() {
-  const canvas=document.createElement('canvas');canvas.width=512;canvas.height=360;
-  const ctx=canvas.getContext('2d');
-  ctx.fillStyle='#f4e3bd';ctx.beginPath();ctx.roundRect(24,24,464,312,62);ctx.fill();
-  ctx.strokeStyle='#264557';ctx.lineWidth=12;ctx.stroke();
-  ctx.fillStyle='#254254';ctx.textAlign='center';
-  ctx.font='bold 48px Georgia,serif';ctx.fillText('ATELIÊ',256,151);
-  ctx.font='bold 66px Georgia,serif';ctx.fillText('AURORA',256,232);
-  const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;return texture;
-}
-
-function makeMug() {
-  const mug = new THREE.Group();
-  const ceramic = new THREE.MeshPhysicalMaterial({ map: makeTexture(), color: 0xffffff, roughness: .39, metalness: 0, clearcoat: .26, clearcoatRoughness: .42, side: THREE.DoubleSide });
-  const rimMat = new THREE.MeshPhysicalMaterial({ color: '#5a7280', roughness: .32, metalness: .12, clearcoat: .35 });
-  const innerMat = new THREE.MeshStandardMaterial({ color: '#e3b58a', roughness: .61, side: THREE.DoubleSide });
-  const points = [
-    [0,.1],[.63,.1],[.75,.12],[.84,.2],[.94,1.43],[.96,1.55],
-    [.83,1.57],[.79,1.46],[.7,.26],[.57,.19],[0,.19]
-  ].map(([x,y]) => new THREE.Vector2(x,y));
-  const body = new THREE.Mesh(new THREE.LatheGeometry(points, 96), ceramic);
-  body.castShadow = true; body.receiveShadow = true; mug.add(body);
-  const inner = new THREE.Mesh(new THREE.CylinderGeometry(.75,.62,1.2,96,1,true), innerMat);
-  inner.position.y=.86; inner.castShadow=false; mug.add(inner);
-  const bottom = new THREE.Mesh(new THREE.CircleGeometry(.62,96), innerMat);
-  bottom.rotation.x=-Math.PI/2; bottom.position.y=.24; mug.add(bottom);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(.875,.052,12,96), rimMat);
-  rim.rotation.x=Math.PI/2; rim.position.y=1.55; mug.add(rim);
-  const handle = new THREE.Mesh(new THREE.TorusGeometry(.54,.135,20,64), ceramic);
-  handle.position.set(1.17,.87,0); handle.rotation.y=.12; handle.castShadow=true; mug.add(handle);
-  const mark=new THREE.Mesh(new THREE.CylinderGeometry(.934,.875,.66,40,1,true,-.52,1.04),new THREE.MeshBasicMaterial({map:makeFrontMark(),transparent:true,side:THREE.DoubleSide,depthWrite:false}));
-  mark.position.y=.82;mark.renderOrder=2;mug.add(mark);
-  // A little ridge gives a side-lit highlight without relying on an image file.
-  const foot = new THREE.Mesh(new THREE.TorusGeometry(.74,.045,10,90), rimMat);
-  foot.rotation.x=Math.PI/2; foot.position.y=.12; mug.add(foot);
-  return mug;
+async function loadProduct(id){
+  if(productModels.has(id))return productModels.get(id);
+  if(!productLoads.has(id))productLoads.set(id,(async()=>{
+    const gltf=await new GLTFLoader().loadAsync(productInfo[id].file);
+    const model=gltf.scene;
+    if(id==='mug')model.rotation.y=Math.PI/2;
+    model.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+    if(!Number.isFinite(size.length())||size.length()<.001)throw new Error('Modelo 3D vazio');
+    const scale=id==='mug'?1.55/size.y:id==='shirt'?2.4/Math.max(size.x,size.z):2.65/Math.max(size.x,size.y,size.z);
+    model.scale.setScalar(scale);
+    model.position.set(-center.x*scale,-box.min.y*scale,-center.z*scale);
+    model.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
+    const item=new THREE.Group();item.add(model);
+    if(id==='mug'||id==='shirt'){
+      try{
+        const logo=await getLogoTexture();
+        const material=new THREE.MeshBasicMaterial({map:logo,transparent:true,alphaTest:.08,depthWrite:false,side:THREE.DoubleSide,toneMapped:false});
+        if(id==='mug'){
+          const radius=size.z*scale*.51;
+          const mark=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,.53,48,1,true,-.56,1.12),material);
+          mark.position.set(-center.x*scale,.82,-center.z*scale);mark.renderOrder=2;item.add(mark);
+        }else{
+          const mark=new THREE.Mesh(new THREE.PlaneGeometry(.72,.72),material);
+          mark.rotation.x=-Math.PI/2;
+          mark.position.set(-center.x*scale+.3,size.y*scale+.012,-center.z*scale+.08);
+          mark.renderOrder=2;item.add(mark);
+        }
+      }catch(error){console.warn('Logo MetaLab indisponível para a peça.',error)}
+    }
+    item.visible=false;productGroup.add(item);productModels.set(id,item);return item;
+  })());
+  try{return await productLoads.get(id)}catch(error){productLoads.delete(id);throw error}
 }
 
 async function loadPhoneModel(){
@@ -156,30 +125,22 @@ async function loadPhoneModel(){
 }
 
 async function selectProduct(id){
-  if(id==='shoe'&&!shoeModel){
-    $('productStatus').textContent='Carregando o tênis 3D com suas texturas…';
-    try{
-      if(!shoeLoading)shoeLoading=new GLTFLoader().loadAsync('assets/shoes_test.glb');
-      const gltf=await shoeLoading;
-      const model=gltf.scene,box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
-      if(!Number.isFinite(size.length())||size.length()<.001)throw new Error('Modelo do tênis vazio');
-      const scale=2.65/Math.max(size.x,size.y,size.z);
-      model.scale.setScalar(scale);
-      model.position.set(-center.x*scale,-box.min.y*scale,-center.z*scale);
-      model.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
-      shoeModel=model;productGroup.add(model);
-    }catch(error){
-      shoeLoading=null;$('productStatus').textContent='Não foi possível abrir o tênis. A caneca continua disponível.';
-      console.warn('Tênis 3D indisponível.',error);return;
-    }
+  if(!productInfo[id])return;
+  requestedProduct=id;
+  $('capture').disabled=true;
+  $('productStatus').textContent=productInfo[id].loading;
+  try{await loadProduct(id)}catch(error){
+    if(requestedProduct===id){$('productStatus').textContent=`Não foi possível abrir ${productInfo[id].name.toLowerCase()}. Escolha outra peça.`;$('capture').disabled=!productModels.has(state.productId)}
+    console.warn('Produto 3D indisponível.',error);return;
   }
-  const shoe=id==='shoe';
-  state.product=shoe?'Tênis de treino':'Caneca de cerâmica';
-  defaultMug.visible=!shoe;if(shoeModel)shoeModel.visible=shoe;
+  if(requestedProduct!==id)return;
+  state.productId=id;state.product=productInfo[id].name;
+  for(const [key,model] of productModels)model.visible=key===id;
   document.querySelectorAll('[data-product]').forEach(button=>{const selected=button.dataset.product===id;button.classList.toggle('selected',selected);button.setAttribute('aria-pressed',String(selected))});
-  $('productStatus').textContent=shoe?'Tênis 3D selecionado · couro, costura e solado visíveis.':'Caneca de cerâmica selecionada.';
-  $('productHelper').innerHTML=shoe?'<b>Dica para começar:</b> use 3/4 para revelar o formato, depois fotografe a lateral, os cadarços e o solado. Procure uma luz que mostre a textura sem estourar as partes claras.':'<b>Dica para começar:</b> use “3/4” e uma altura um pouco acima da borda. Assim é possível reconhecer a alça, a abertura e a textura em uma única imagem.';
-  $('angleLesson').textContent=shoe?'Depois da foto principal, registre perfil lateral, traseira, solado e um detalhe dos cadarços ou da costura.':'Depois da foto principal, registre lado, verso e detalhe. Para a caneca, mostre também a alça, a borda e o interior.';
+  $('productStatus').textContent=productInfo[id].ready;
+  $('productHelper').innerHTML=`<b>Dica para começar:</b> ${productInfo[id].hint}`;
+  $('angleLesson').textContent=productInfo[id].lesson;
+  $('capture').disabled=false;
   updateFeedback();scheduleRender();
 }
 
@@ -203,7 +164,6 @@ function makeScene() {
   const wall=new THREE.Mesh(new THREE.PlaneGeometry(13,7),new THREE.MeshStandardMaterial({color:'#dbe3df',roughness:1}));
   wall.position.set(0,3,-5.5);wall.receiveShadow=true;scene.add(wall);
   productGroup=new THREE.Group();productGroup.position.y=.12;scene.add(productGroup);
-  defaultMug=makeMug(); productGroup.add(defaultMug);
   const ringMat=new THREE.MeshBasicMaterial({color:'#ad7b27',transparent:true,opacity:.55,depthWrite:false});
   ring=new THREE.Mesh(new THREE.RingGeometry(3.75,3.78,128),ringMat);
   ring.rotation.x=-Math.PI/2;ring.position.y=.025;scene.add(ring);
@@ -227,7 +187,7 @@ function setupRenderers() {
   }
   stageCamera=new THREE.PerspectiveCamera(39,1,.1,100);
   stageCamera.position.set(4.5,4.9,8.6);stageCamera.lookAt(0,.85,0);
-  phoneCamera=new THREE.PerspectiveCamera(57,1,.1,50);
+  phoneCamera=new THREE.PerspectiveCamera(78,1,.1,50);
 }
 
 function resizeRenderer(renderer,canvas,camera){
@@ -243,7 +203,7 @@ function render(){
   resizeRenderer(previewRenderer,previewCanvas,phoneCamera);
   const angle=THREE.MathUtils.degToRad(state.angle);
   const x=Math.sin(angle)*state.distance,z=Math.cos(angle)*state.distance;
-  const target=new THREE.Vector3(.25,.94,0);
+  const target=new THREE.Vector3(state.productId==='mug'?.12:0,state.productId==='shirt'?.54:state.productId==='shoe'?.72:.83,0);
   phone.position.set(x,state.height,z);
   phone.lookAt(target);
   phoneCamera.position.copy(phone.position);phoneCamera.lookAt(target);
@@ -256,14 +216,14 @@ function render(){
 function updateFeedback(){
   let title,text;
   const a=Math.abs(state.angle);
-  const shoe=state.product==='Tênis de treino';
-  if(state.height>2.5){title='Vista de cima';text=shoe?'Mostra os cadarços e a abertura. Combine com uma foto lateral para explicar a forma e o solado.':'Boa para mostrar a abertura e o interior. Acrescente outra foto lateral para explicar a altura da peça.'}
+  const shoe=state.productId==='shoe',shirt=state.productId==='shirt';
+  if(state.height>2.5){title='Vista de cima';text=shirt?'Revela cores, dobras e estampa. Complete com uma foto em 3/4 para mostrar a altura da pilha.':shoe?'Mostra os cadarços e a abertura. Combine com uma foto lateral para explicar a forma e o solado.':'Boa para mostrar a abertura e o interior. Acrescente outra foto lateral para explicar a altura da peça.'}
   else if(state.distance<3.1){title='Muito perto';text='Um detalhe pode ficar interessante, mas o produto pode sair do quadro. Afaste um pouco para a foto principal.'}
   else if(state.distance>5.1){title='Mais longe';text='Há espaço em volta do produto. Aproxime se ele ficou pequeno e os detalhes perderam força.'}
-  else if(a<20){title='Vista frontal';text=shoe?'Observe se a frente e os cadarços estão claros. Uma foto lateral ajuda a mostrar o comprimento do tênis.':'Boa para ler a estampa. A alça pode ficar menos clara; uma foto em 3/4 completa a apresentação.'}
-  else if(a<70){title='Ângulo em 3/4';text=shoe?'A perspectiva ajuda a mostrar volume, material e detalhes. Confira se a ponta e o calcanhar cabem no quadro.':'Aqui se percebem a frente, o volume e parte da alça. É um bom candidato para a foto principal.'}
-  else if(a<120){title='Vista lateral';text=shoe?'O perfil ajuda a explicar o desenho, o solado e a altura. Combine com um detalhe da costura.':'Ajuda a entender a profundidade e a alça. Use junto com uma vista frontal para mostrar a estampa.'}
-  else {title='Verso do produto';text=shoe?'Mostre o calcanhar e o acabamento; uma foto do solado completa a informação.':'Mostra acabamento e partes que a foto principal esconde. É útil como imagem complementar.'}
+  else if(a<20){title='Vista frontal';text=shirt?'Mostra a frente da pilha. Inclua uma vista de cima para deixar claras as cores e a textura do tecido.':shoe?'Observe se a frente e os cadarços estão claros. Uma foto lateral ajuda a mostrar o comprimento do tênis.':'Mostra a forma da caneca. Uma foto em 3/4 deixa a alça e a marca mais claras.'}
+  else if(a<70){title='Ângulo em 3/4';text=shirt?'Ajuda a perceber a altura, as dobras e a superfície das camisas. Confira se todas cabem no quadro.':shoe?'A perspectiva ajuda a mostrar volume, material e detalhes. Confira se a ponta e o calcanhar cabem no quadro.':'Aqui se percebem a frente, o volume e a alça. É um bom candidato para a foto principal.'}
+  else if(a<120){title='Vista lateral';text=shirt?'Mostra a espessura da pilha e o caimento das dobras. Combine com uma foto de cima.':shoe?'O perfil ajuda a explicar o desenho, o solado e a altura. Combine com um detalhe da costura.':'Ajuda a entender a profundidade e a alça. Combine com uma vista frontal para mostrar a marca.'}
+  else {title='Verso do produto';text=shirt?'Use para mostrar as peças de trás e conferir se a composição continua clara.':shoe?'Mostre o calcanhar e o acabamento; uma foto do solado completa a informação.':'Mostra acabamento e partes que a foto principal esconde. É útil como imagem complementar.'}
   $('angleFeedback').innerHTML=`<b>${title}</b><br>${text}`;
 }
 
@@ -309,7 +269,7 @@ async function capture(){
     render();
     const blob=await new Promise((resolve,reject)=>previewCanvas.toBlob(value=>value?resolve(value):reject(new Error('Falha ao criar imagem')),'image/png'));
     const stamp=new Date().toISOString().replace(/[:.]/g,'-');
-    const slug=state.product==='Tênis de treino'?'tenis':'caneca';
+    const slug={mug:'caneca',shoe:'tenis',shirt:'camisas'}[state.productId];
     const record=await window.MetaLabGallery.save({blob,name:`metalab-${slug}-${stamp}.png`,product:state.product,angle:Math.round(state.angle),height:Math.round(state.height*10)});
     lastSavedPhoto=record;
     const src=URL.createObjectURL(blob);captures.unshift({src,angle:record.angle,height:record.height});
@@ -329,7 +289,7 @@ async function capture(){
 }
 
 try{
-  makeScene();setupRenderers();bindControls();syncControls();loadPhoneModel();
+  makeScene();setupRenderers();bindControls();syncControls();loadPhoneModel();selectProduct('mug');
 }catch(error){
   console.error(error);
   $('stageError').hidden=false;

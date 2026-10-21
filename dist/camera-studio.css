@@ -14,3 +14,7 @@
 .device.model-ready .viewfinder{flex:1;min-height:0;aspect-ratio:auto}
 .device.model-ready .device-bottom{height:auto;flex:0 0 64px}
 .device.model-ready .gesture-bar{flex:0 0 3px;margin:0 auto 7px}
+.product-choices{flex-wrap:wrap;justify-content:flex-end}
+.product-choices .shirt-icon{background:#c9d1eb;color:#354c78}
+.shutter:disabled{opacity:.55;cursor:wait}
+@media(max-width:650px){.product-choices button{flex:1 1 125px}.product-choices{justify-content:stretch}}
