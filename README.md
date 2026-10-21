@@ -12,7 +12,7 @@ Importe este repositório na Vercel. Use **Framework Preset: Other** e deixe o c
 
 Configure `DATABASE_URL` como variável de ambiente **protegida** na Vercel, usando a URL pública do PostgreSQL Railway. Não coloque a URL no código nem em arquivos versionados. A função cria a tabela `metalab_students` na primeira gravação; o usuário do banco precisa de permissão para criar tabela e inserir registros. A tela de entrada só libera o simulador depois de uma confirmação de gravação. Ela não autentica ou isola alunos: um marcador temporário da aba apenas evita repetir o cadastro durante a sessão. Nome, e-mail e nascimento não são guardados no armazenamento do navegador. As fotos e os dados dos apps fictícios continuam locais.
 
-Execute `npm ci` e `npm test` para verificar a API. Para testar o fluxo completo localmente, use `vercel dev` com `DATABASE_URL` definida fora do repositório. Um servidor HTTP estático ou o endereço anterior do Sites não executa `/api/students`; nesse caso, o formulário informa que o cadastro está indisponível.
+Execute `npm ci` e `npm test` para verificar a API. Para testar o fluxo completo localmente, use `vercel dev` com `DATABASE_URL` definida fora do repositório. Abrir `dist/index.html` como `file://` oferece uma prévia explícita sem cadastro nem gravação; modelos 3D podem exigir um servidor HTTP. Um servidor HTTP apenas estático ou o endereço anterior do Sites não executa `/api/students` e não registra alunos.
 
 ## Créditos dos modelos
 

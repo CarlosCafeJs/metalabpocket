@@ -48,8 +48,8 @@
       </div>
       <div class="entry-card">
         <span class="entry-step">01 · ENTRADA DO ALUNO</span>
-        <h2>Bem-vindo ao MetaLab Pocket.</h2>
-        <p>Preencha seus dados para começar a experiência.</p>
+        <h2 id="entryCardTitle">Bem-vindo ao MetaLab Pocket.</h2>
+        <p id="entryCardIntro">Preencha seus dados para começar a experiência.</p>
         <form id="studentEntryForm">
           <label>Nome completo<input name="name" type="text" autocomplete="name" minlength="2" maxlength="120" required placeholder="Como você se chama?"></label>
           <label>E-mail<input name="email" type="email" autocomplete="email" maxlength="254" required placeholder="seuemail@exemplo.com"></label>
@@ -57,6 +57,11 @@
           <button type="submit">Entrar no MetaLab Pocket</button>
           <p class="entry-message" id="entryMessage" role="alert" aria-live="polite"></p>
         </form>
+        <div class="entry-local" id="localPreview" hidden>
+          <p>Este arquivo foi aberto diretamente no computador. Nesse modo, não existe servidor para salvar o cadastro no PostgreSQL.</p>
+          <button type="button" id="previewWithoutSaving">Explorar prévia sem salvar dados</button>
+          <small>Para registrar um aluno, abra a versão publicada na Vercel com o banco configurado.</small>
+        </div>
         <p class="entry-privacy"><strong>Ambiente de treino:</strong> seus dados são usados para registrar sua entrada. Os apps do celular são simulações e não acessam redes sociais reais.</p>
       </div>
     </div>

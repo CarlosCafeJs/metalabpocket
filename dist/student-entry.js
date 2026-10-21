@@ -4,6 +4,7 @@
   const form = document.getElementById('studentEntryForm');
   const app = document.querySelector('main.wrap');
   const message = document.getElementById('entryMessage');
+  const localPreview = document.getElementById('localPreview');
   if (!entry || !form || !app) return;
 
   function showApp(name) {
@@ -17,6 +18,15 @@
   }
 
   app.inert = true;
+  if (location.protocol === 'file:') {
+    form.hidden = true;
+    localPreview.hidden = false;
+    document.querySelector('.entry-privacy').hidden = true;
+    document.getElementById('entryCardTitle').textContent = 'Prévia local do MetaLab Pocket.';
+    document.getElementById('entryCardIntro').textContent = 'Você pode explorar o simulador sem registrar dados.';
+    document.getElementById('previewWithoutSaving').onclick = () => showApp();
+    return;
+  }
   if (sessionStorage.getItem(key) === 'yes') {
     showApp();
     return;
@@ -46,7 +56,9 @@
       form.reset();
       showApp(result.firstName);
     } catch (error) {
-      message.textContent = error.message || 'Não foi possível salvar o cadastro. Tente novamente.';
+      message.textContent = error instanceof TypeError
+        ? 'Não foi possível conectar ao cadastro. Abra a versão publicada na Vercel e tente novamente.'
+        : error.message || 'Não foi possível salvar o cadastro. Tente novamente.';
     } finally {
       button.disabled = false;
       button.textContent = 'Entrar no MetaLab Pocket';
