@@ -18,6 +18,35 @@ let renderPending = false;
 const captures = [];
 let lastSavedPhoto;
 
+function showPreviewPhone(model,size){
+  const canvas=$('previewPhoneModel');
+  const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'high-performance'});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setClearColor(0,0);
+  renderer.outputColorSpace=THREE.SRGBColorSpace;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.3;
+  const displayScene=new THREE.Scene();
+  displayScene.add(new THREE.HemisphereLight('#ffffff','#8ca0b3',2.7));
+  const key=new THREE.DirectionalLight('#ffffff',2.4);key.position.set(-3,5,6);displayScene.add(key);
+  const fill=new THREE.DirectionalLight('#d7eaff',1.2);fill.position.set(3,1,-5);displayScene.add(fill);
+  const root=new THREE.Group();root.add(model);root.scale.setScalar(4/size.y);displayScene.add(root);
+  const camera=new THREE.OrthographicCamera(-1,1,2.17,-2.17,.1,40);
+  camera.position.set(0,0,8);camera.lookAt(0,0,0);
+  function draw(){
+    const width=canvas.clientWidth,height=canvas.clientHeight;
+    if(!width||!height)return;
+    renderer.setSize(width,height,false);
+    const halfH=2.17;
+    camera.left=-halfH*width/height;camera.right=halfH*width/height;
+    camera.top=halfH;camera.bottom=-halfH;camera.updateProjectionMatrix();
+    renderer.render(displayScene,camera);
+  }
+  $('previewDevice').classList.add('model-ready');
+  new ResizeObserver(draw).observe(canvas);
+  draw();
+}
+
 function makeTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = 1024; canvas.height = 512;
@@ -104,6 +133,7 @@ async function loadPhoneModel(){
     const model=gltf.scene,box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
     if(size.y<=0)throw new Error('Modelo do celular sem altura');
     model.position.sub(center);
+    const displayModel=model.clone(true);
     const holder=new THREE.Group();holder.add(model);holder.scale.setScalar(1.1/size.y);
     // Object3D.lookAt aims +Z at the product. Turn the supplied phone so its
     // rear cameras (-Z in the model) face the product and its screen faces us.
@@ -113,6 +143,7 @@ async function loadPhoneModel(){
       new THREE.MeshBasicMaterial({map:phoneScreenTexture,side:THREE.FrontSide,toneMapped:false})
     );
     const screenAspect=(size.x*.75)/(size.y*.84);
+    showPreviewPhone(displayModel,size);
     const viewAspect=previewCanvas.clientWidth/previewCanvas.clientHeight||.75;
     const viewWidth=Math.min(1,screenAspect/viewAspect);
     phoneScreenTexture.repeat.set(viewWidth,1);
