@@ -1,0 +1,22 @@
+:root{
+  color-scheme:light;
+  --ml-bg:#F8F5EF;
+  --ml-surface:#FFFDF9;
+  --ml-surface-secondary:#F0EBE3;
+  --ml-ink:#142440;
+  --ml-muted:#536680;
+  --ml-accent:#D98B08;
+  --ml-accent-bright:#F5B82E;
+  --ml-accent-soft:#FFF0C6;
+  --ml-line:#E5DED2;
+  --ml-phone-dark:#181329;
+  --ml-white:#FFFFFF;
+  --navy:var(--ml-ink);
+  --navy2:#203A61;
+  --cream:var(--ml-bg);
+  --paper:var(--ml-surface);
+  --ink:var(--ml-ink);
+  --muted:var(--ml-muted);
+  --gold:var(--ml-accent-bright);
+  --line:var(--ml-line);
+}

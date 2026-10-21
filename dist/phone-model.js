@@ -9,7 +9,7 @@ if(phone&&canvas){
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     renderer.toneMapping=THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure=1.3;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.5));
     renderer.setClearColor(0,0);
     const scene=new THREE.Scene();
     scene.add(new THREE.HemisphereLight('#ffffff','#8ca0b3',2.7));

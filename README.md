@@ -4,6 +4,8 @@ Simulador de celular e estúdio de fotografia 3D para aulas protegidas. Os aplic
 
 As fotos criadas no estúdio ficam salvas na galeria local do navegador; o aluno pode escolher onde guardar uma cópia no computador, se o navegador oferecer essa opção. Publicações do Instagram de treino usam o armazenamento local do navegador e podem ser removidas no próprio app.
 
+A identidade visual usa a logo fornecida em `dist/assets/metalab-logo.png` e os tokens compartilhados de `dist/design-tokens.css`. O 3D renderiza quando há interação ou mudança de tamanho; em telas e computadores modestos, a resolução e o mapa de sombras são limitados. A interface respeita a preferência do sistema por movimento reduzido.
+
 ## Publicar na Vercel
 
 Importe este repositório na Vercel. Use **Framework Preset: Other** e deixe o comando de build vazio. O arquivo `vercel.json` configura a pasta `dist` como saída e permite abrir o estúdio em `/camera-studio`.

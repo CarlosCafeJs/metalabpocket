@@ -5,6 +5,8 @@ const $ = (id) => document.getElementById(id);
 const stageCanvas = $('stage');
 const previewCanvas = $('preview');
 const state = { angle: 0, height: 1.5, distance: 3.8, product: 'Caneca de cerâmica', productId: 'mug' };
+const lowPower = window.innerWidth < 700 || (navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency <= 4);
+const maxPixelRatio = lowPower ? 1.25 : 1.75;
 const presets = {
   front: { angle: 0, height: 1.5, distance: 3.8 },
   threequarter: { angle: 42, height: 1.75, distance: 4.1 },
@@ -30,7 +32,7 @@ const productInfo = {
 function showPreviewPhone(model,size){
   const canvas=$('previewPhoneModel');
   const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'high-performance'});
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,maxPixelRatio));
   renderer.setClearColor(0,0);
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
@@ -140,7 +142,7 @@ async function selectProduct(id){
 function addLights() {
   scene.add(new THREE.HemisphereLight('#eaf6ff','#7d6352',2.2));
   const key = new THREE.DirectionalLight('#fff1d8',3.1);
-  key.position.set(-3,7,5); key.castShadow=true; key.shadow.mapSize.set(2048,2048);
+  key.position.set(-3,7,5); key.castShadow=true; key.shadow.mapSize.set(lowPower?1024:1536,lowPower?1024:1536);
   key.shadow.camera.left=-7;key.shadow.camera.right=7;key.shadow.camera.top=7;key.shadow.camera.bottom=-7;
   key.shadow.bias=-.0003; scene.add(key);
   const fill=new THREE.DirectionalLight('#d6e6ff',1.2);fill.position.set(4,3,-3);scene.add(fill);
@@ -175,8 +177,8 @@ function setupRenderers() {
     renderer.toneMapping=THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure=1.25;
     renderer.shadowMap.enabled=true;
-    renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+    renderer.shadowMap.type=THREE.PCFShadowMap;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,maxPixelRatio));
   }
   stageCamera=new THREE.PerspectiveCamera(39,1,.1,100);
   stageCamera.position.set(4.5,4.9,8.6);stageCamera.lookAt(0,.85,0);
