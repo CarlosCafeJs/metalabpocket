@@ -157,7 +157,7 @@ function setupRenderers() {
   }
   stageCamera=new THREE.PerspectiveCamera(39,1,.1,100);
   stageCamera.position.set(6.3,4.9,8.6);stageCamera.lookAt(0,.85,0);
-  phoneCamera=new THREE.PerspectiveCamera(49,1,.1,50);
+  phoneCamera=new THREE.PerspectiveCamera(57,1,.1,50);
 }
 
 function resizeRenderer(renderer,canvas,camera){
