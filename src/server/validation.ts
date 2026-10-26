@@ -43,5 +43,36 @@ export async function readJson(request: Request, limit = 8192) {
 export function sameOrigin(request: Request) {
   const origin = request.headers.get('origin');
   if (!origin) return true;
-  return origin === new URL(request.url).origin;
+
+  let parsedOrigin: URL;
+  try {
+    parsedOrigin = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (parsedOrigin.username || parsedOrigin.password || parsedOrigin.pathname !== '/' || parsedOrigin.search || parsedOrigin.hash) {
+    return false;
+  }
+
+  // Behind Railway (and other reverse proxies), request.url can contain the
+  // container's internal HTTP address while the browser sends the public HTTPS
+  // origin. Prefer the proxy's forwarded public host/protocol when available.
+  const firstHeaderValue = (name: string) =>
+    request.headers.get(name)?.split(',')[0]?.trim();
+  const forwardedHost = firstHeaderValue('x-forwarded-host');
+  const host = forwardedHost || request.headers.get('host')?.trim();
+  const forwardedProtocol = firstHeaderValue('x-forwarded-proto');
+
+  if (host) {
+    const expectedProtocol = forwardedProtocol || new URL(request.url).protocol.replace(/:$/, '');
+    if (expectedProtocol !== 'http' && expectedProtocol !== 'https') return false;
+    try {
+      const expected = new URL(`${expectedProtocol}://${host}`);
+      return parsedOrigin.origin === expected.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  return parsedOrigin.origin === new URL(request.url).origin;
 }
