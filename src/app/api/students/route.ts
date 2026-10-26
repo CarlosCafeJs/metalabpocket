@@ -37,6 +37,9 @@ function failureMessage(code: string) {
   if (code === '28P01' || code === '28000') {
     return 'O banco recusou as credenciais configuradas. Confira DATABASE_URL no ambiente do servidor.';
   }
+  if (code === 'SELF_SIGNED_CERT_IN_CHAIN') {
+    return 'O banco recusou o certificado TLS. Configure DATABASE_CA e DATABASE_SSL_SERVERNAME com o certificado e o nome esperados pelo PostgreSQL Railway.';
+  }
   if (code.startsWith('08') || ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNRESET'].includes(code)) {
     return 'Não foi possível conectar ao banco de dados. Confira a conexão configurada e tente novamente.';
   }

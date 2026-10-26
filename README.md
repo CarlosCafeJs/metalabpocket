@@ -44,7 +44,11 @@ Essas credenciais são apenas para o banco local descartável e nunca devem ser 
 
 ## Publicação na Vercel
 
-Importe o repositório `CarlosCafeJs/metalabpocket` com o preset **Next.js**. Configure `DATABASE_URL`, `METALAB_TEACHER_CPF`, `METALAB_TEACHER_PASSWORD`, `METALAB_TEACHER_SESSION_SECRET` e, se necessário, `DATABASE_CA` como variáveis protegidas no painel da Vercel. Execute as migrações uma vez em ambiente controlado com a mesma conexão, depois publique. Não coloque credenciais em variáveis `NEXT_PUBLIC_*`, no código-fonte, em commits ou em comandos registrados no terminal.
+Importe o repositório `CarlosCafeJs/metalabpocket` com o preset **Next.js**. Configure `DATABASE_URL`, `METALAB_TEACHER_CPF`, `METALAB_TEACHER_PASSWORD` e `METALAB_TEACHER_SESSION_SECRET` como variáveis protegidas no painel da Vercel. Execute as migrações uma vez em ambiente controlado com a mesma conexão, depois publique. Não coloque credenciais em variáveis `NEXT_PUBLIC_*`, no código-fonte, em commits ou em comandos registrados no terminal.
+
+Para PostgreSQL Railway, use a URL pública TCP Proxy em `DATABASE_URL`. O Postgres padrão do Railway cria uma CA e um certificado próprios; para manter a validação TLS na Vercel, copie o certificado público `/var/lib/postgresql/data/certs/root.crt` pelo Shell do serviço Postgres Railway e salve seu conteúdo como variável protegida `DATABASE_CA` na Vercel. Configure também `DATABASE_SSL_SERVERNAME=localhost`, nome presente no certificado Railway. Mantenha `DATABASE_SSL=true` e `DATABASE_SSL_REJECT_UNAUTHORIZED=true`. Alterações nas variáveis só valem em uma nova implantação. A conexão externa usa o proxy público do Railway; serviços dentro da Railway podem usar a rede privada. Consulte a [documentação do PostgreSQL Railway](https://docs.railway.com/databases/postgresql) e o [script oficial que gera os certificados](https://github.com/railwayapp-templates/postgres-ssl/blob/main/init-ssl.sh).
+
+Na entrada, o servidor procura primeiro um aluno pelo e-mail e data de nascimento; quando encontra, cria uma sessão nova para o registro existente. A inserção de outro cadastro só ocorre quando não encontra correspondência. Essa consulta só acontece depois de conectar ao banco, por isso o certificado precisa estar confiável para a retomada funcionar.
 
 O projeto contém a aplicação Next.js e pode ser publicado na Vercel. O endereço estático anterior do Sites não executa as APIs PostgreSQL e não substitui esta implantação.
 

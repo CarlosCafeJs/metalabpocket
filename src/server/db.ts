@@ -9,6 +9,7 @@ declare global {
 function sslConfig() {
   if (process.env.DATABASE_SSL === 'false') return false;
   const ca = process.env.DATABASE_CA?.replace(/\\n/g, '\n');
+  const servername = process.env.DATABASE_SSL_SERVERNAME?.trim();
   // Railway's stock public TCP proxy uses a self-signed certificate. This opt-in
   // is for local development only; production and Vercel always verify TLS.
   const allowInsecureLocalTls =
@@ -16,7 +17,11 @@ function sslConfig() {
     process.env.NODE_ENV !== 'production' &&
     process.env.VERCEL !== '1';
   const rejectUnauthorized = !allowInsecureLocalTls;
-  return ca ? { ca, rejectUnauthorized } : { rejectUnauthorized };
+  return {
+    ...(ca ? { ca } : {}),
+    ...(servername ? { servername } : {}),
+    rejectUnauthorized
+  };
 }
 
 export function getPool() {
