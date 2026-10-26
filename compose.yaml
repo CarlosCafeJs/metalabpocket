@@ -1,0 +1,21 @@
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: metalab-pocket-postgres-test
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: metalab_test
+      POSTGRES_USER: metalab_test
+      POSTGRES_PASSWORD: metalab_test_only
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - metalab_postgres_test:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metalab_test -d metalab_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  metalab_postgres_test:

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#1D1230">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; connect-src 'self' blob: data:; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="description" content="Câmera MetaLab Pocket. Mova o celular virtual ao redor de um produto de treino.">
+  <title>Câmera · MetaLab Pocket</title>
+  <link rel="stylesheet" href="design-tokens.css">
+  <link rel="stylesheet" href="camera-studio.css">
+</head>
+<body>
+  <header class="site-header"><a class="back-link" href="/celular" target="_top">← Voltar ao Sistema</a></header>
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <div><p class="eyebrow">LABORATÓRIO INTERATIVO · CÂMERA FICTÍCIA</p><h1 id="page-title">Descubra o melhor ângulo do produto.</h1><p class="lead">Arraste o celular pelo cenário, ajuste a altura e observe como a foto muda. Escolha uma peça de treino 3D já preparada para esta aula.</p></div>
+      <div class="lesson-pill"><span>01</span><div><b>Seu desafio</b><small>Mostrar forma, material e um detalhe que diferencie o produto.</small></div></div>
+    </section>
+
+    <section class="product-panel" aria-label="Escolher produto para fotografar"><div><span class="step">OBJETOS DA AULA</span><h2>O que vamos fotografar?</h2><p id="productStatus" role="status">Carregando a caneca 3D…</p></div><div class="product-choices"><button type="button" data-product="mug" class="selected" aria-pressed="true"><span class="product-icon mug-icon" aria-hidden="true">◕</span><span><b>Caneca</b><small>Modelo 3D com marca</small></span></button><button type="button" data-product="shoe" aria-pressed="false"><span class="product-icon shoe-icon" aria-hidden="true">◡</span><span><b>Tênis</b><small>Modelo 3D com textura</small></span></button><button type="button" data-product="shirt" aria-pressed="false"><span class="product-icon shirt-icon" aria-hidden="true">▤</span><span><b>Camisas</b><small>Tecido e dobras em 3D</small></span></button></div></section>
+
+    <section class="workspace" aria-label="Simulador de fotografia em três dimensões">
+      <div class="scene-column">
+        <div class="panel-head"><div><span class="step">CENÁRIO 3D</span><h2>Mova o celular ao redor da peça</h2></div><span class="drag-hint">⤾ Arraste no cenário</span></div>
+        <div class="stage-wrap"><canvas id="stage" tabindex="0" aria-label="Cena tridimensional com produto e celular virtual. As câmeras traseiras apontam para o produto e a tela mostra a prévia. Arraste ou use as setas para movimentar o celular."></canvas><div class="stage-overlay"><span class="dot"></span> Produto de treino · sem câmera real</div><div id="stageError" class="stage-error" hidden></div></div>
+        <div class="quick-angles" role="group" aria-label="Ângulos prontos">
+          <button type="button" data-preset="front" class="active">Frente</button><button type="button" data-preset="threequarter">3/4</button><button type="button" data-preset="side">Lado</button><button type="button" data-preset="back">Verso</button><button type="button" data-preset="top">De cima</button>
+        </div>
+        <div class="control-grid">
+          <label>Girar em volta <output id="angleValue" for="angle">0°</output><input id="angle" type="range" min="-180" max="180" value="0"></label>
+          <label>Altura do celular <output id="heightValue" for="height">15 cm</output><input id="height" type="range" min="7" max="29" value="15"></label>
+          <label>Distância <output id="distanceValue" for="distance">Média</output><input id="distance" type="range" min="27" max="55" value="38"></label>
+        </div>
+        <div class="helper" id="productHelper"><b>Dica para começar:</b> use “3/4” para mostrar a alça, o formato e a marca discreta. Inclua uma foto de cima para mostrar o interior.</div>
+        <section class="lesson-grid" aria-label="Orientações para fotografar um produto">
+          <article><span class="number">01</span><h3>Mostre o que está à venda</h3><p>Use um fundo simples e deixe a peça inteira no quadro. Na primeira foto, a pessoa precisa reconhecer o produto sem adivinhar.</p></article>
+          <article><span class="number">02</span><h3>Explique com outros ângulos</h3><p id="angleLesson">Depois da foto principal, registre lado, verso e detalhe. Para a caneca, mostre também a alça, a borda e o interior.</p></article>
+          <article><span class="number">03</span><h3>Observe a luz</h3><p>Uma luz ampla de lado revela o relevo sem criar sombras duras. Evite que a luz esconda a textura ou altere a cor percebida.</p></article>
+          <article><span class="number">04</span><h3>Conte a verdade do produto</h3><p>Uma boa vitrine combina foto clara com descrição simples: material, tamanho, cor e uso. Confira esses dados antes de publicar fora desta aula.</p></article>
+        </section>
+      </div>
+
+      <aside class="preview-column" aria-label="Visor do celular virtual">
+        <div class="preview-heading"><div><span class="step">VISOR AO VIVO</span><h2>O que o celular vê</h2></div><span class="sim-chip">SIMULAÇÃO</span></div>
+        <div class="device" id="previewDevice" aria-label="Celular 3D com visor de câmera interativo"><canvas id="previewPhoneModel" class="preview-phone-model" aria-hidden="true"></canvas><div class="device-interface"><div class="device-top"><span>9:41</span><span>▮ ▮ 100%</span></div><div class="viewfinder"><canvas id="preview" aria-label="Prévia tridimensional da fotografia conforme a posição do celular"></canvas><div class="grid-lines" aria-hidden="true"></div><span class="preview-badge">META<span>LAB</span> · AULA</span></div><div class="device-bottom"><span>FOTO</span><button type="button" id="capture" class="shutter" aria-label="Fotografar e salvar na galeria do celular" disabled></button><span>3D</span></div><div class="gesture-bar"></div></div></div>
+        <div id="angleFeedback" class="feedback" role="status" aria-live="polite"></div>
+        <div class="capture-section"><div class="capture-head"><h3>Fotos da sessão</h3><span id="captureCount">0/10</span></div><div id="captures" class="capture-list"><p>Toque no botão da câmera. A foto será salva na Galeria do celular e ficará disponível para o professor.</p></div></div>
+      </aside>
+    </section>
+
+    <footer>MetaLab Pocket · simulação educativa. A câmera não acessa a câmera real. As fotos ficam associadas à sessão do aluno e disponíveis ao professor no curso.<br>Modelo da caneca: eduterrataca · CC BY 4.0.</footer>
+  </main>
+  <dialog id="saveDialog" class="save-dialog" aria-labelledby="saveTitle"><h2 id="saveTitle">Foto salva na Galeria ✓</h2><p>Sua imagem já está no celular fictício. Quer guardar também uma cópia no computador?</p><p id="saveHint" class="save-hint"></p><div class="dialog-actions"><button type="button" id="saveComputer" class="save-primary">Escolher local e salvar</button><button type="button" id="saveLater">Agora não</button></div><a href="/celular" target="_top">Voltar ao celular e abrir a Galeria ↗</a><p id="saveResult" role="status"></p></dialog>
+  <script src="gallery-store.js" defer></script>
+  <script type="module" src="camera-studio.js"></script>
+</body>
+</html>
