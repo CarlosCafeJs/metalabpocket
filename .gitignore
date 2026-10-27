@@ -6,3 +6,4 @@ out/
 .env.*
 !.env.example
 .vercel/
+METALAB_PROJETO_COMPLETO.txt
