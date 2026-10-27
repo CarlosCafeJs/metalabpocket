@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { allMissions, getMission, type Mission } from '@/domain/curriculum';
 import {
-  findStudentBySessionToken,
+  findEnrolledStudentBySessionToken,
   getBusiness,
   getMissionAttempt,
   getMissionAttempts,
@@ -32,7 +32,7 @@ function thrownResponse(error: Response) {
 
 async function currentStudent(request: NextRequest) {
   const token = readSessionToken(request);
-  return token ? findStudentBySessionToken(token) : null;
+  return token ? findEnrolledStudentBySessionToken(token) : null;
 }
 
 function expiredResponse() {

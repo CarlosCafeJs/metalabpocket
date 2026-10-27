@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { allMissions } from '@/domain/curriculum';
-import { findStudentBySessionToken, getBusiness, getMissionAttempts, setStudentPhotoSharingConsent } from '@/server/repository';
+import { findEnrolledStudentBySessionToken, findStudentBySessionToken, getBusiness, getMissionAttempts, getStudentClass, setStudentPhotoSharingConsent } from '@/server/repository';
 import { clearSessionCookie, readSessionToken } from '@/server/session';
 import { photoConsentSchema, readJson, sameOrigin } from '@/server/validation';
 
@@ -24,6 +24,8 @@ export async function GET(request: NextRequest) {
       clearSessionCookie(response);
       return response;
     }
+    const classroom = await getStudentClass(student.id);
+    if (!classroom) return json({ student: { id: student.id, displayName: student.displayName }, enrolled: false, classroom: null });
     const [business, progress] = await Promise.all([
       getBusiness(student.id),
       getMissionAttempts(student.id)
@@ -38,6 +40,8 @@ export async function GET(request: NextRequest) {
     ];
     return json({
       student,
+      enrolled: true,
+      classroom,
       business,
       progress: {
         completedMissions: completedIds.size,
@@ -60,7 +64,7 @@ export async function PATCH(request: NextRequest) {
   if (!sameOrigin(request)) return json({ error: 'Origem da solicitação não permitida.' }, 403);
   try {
     const token = readSessionToken(request);
-    const student = token ? await findStudentBySessionToken(token) : null;
+    const student = token ? await findEnrolledStudentBySessionToken(token) : null;
     if (!student) return json({ error: 'Sessão expirada.' }, 401);
     const parsed = photoConsentSchema.safeParse(await readJson(request, 1024));
     if (!parsed.success) return json({ error: 'Escolha uma opção válida.' }, 400);

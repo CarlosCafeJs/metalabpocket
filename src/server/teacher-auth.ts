@@ -20,12 +20,31 @@ function validCpf(value: string) {
     && digit(value.slice(0, 10), 11) === Number(value[10]);
 }
 
+type TeacherAccount = { cpf: string; password: string };
+
 function configuration() {
-  const cpf = digits(process.env.METALAB_TEACHER_CPF || '');
-  const password = process.env.METALAB_TEACHER_PASSWORD || '';
   const secret = process.env.METALAB_TEACHER_SESSION_SECRET || '';
-  if (!validCpf(cpf) || password.length < 12 || secret.length < 32) return null;
-  return { cpf, password, secret };
+  if (secret.length < 32) return null;
+
+  const primaryCpf = digits(process.env.METALAB_TEACHER_CPF || '');
+  const primaryPassword = process.env.METALAB_TEACHER_PASSWORD || '';
+  const secondaryCpf = digits(process.env.METALAB_TEACHER_2_CPF || '');
+  const secondaryPassword = process.env.METALAB_TEACHER_2_PASSWORD || '';
+  const accounts: TeacherAccount[] = [];
+
+  if (validCpf(primaryCpf) && primaryPassword.length >= 12) {
+    accounts.push({ cpf: primaryCpf, password: primaryPassword });
+  }
+
+  // The optional second account may use a fictitious 11-digit identifier.
+  // It is only an account name; access still requires its own strong password.
+  if (/^\d{11}$/u.test(secondaryCpf) && !/^([0-9])\1{10}$/u.test(secondaryCpf)
+      && !accounts.some(account => account.cpf === secondaryCpf) && secondaryPassword.length >= 12) {
+    accounts.push({ cpf: secondaryCpf, password: secondaryPassword });
+  }
+
+  if (!accounts.length) return null;
+  return { accounts, secret };
 }
 
 function equalText(left: string, right: string) {
@@ -41,7 +60,7 @@ export function verifyTeacherCredentials(cpfInput: string, passwordInput: string
   const config = configuration();
   if (!config) return false;
   const cpf = digits(cpfInput);
-  return validCpf(cpf) && equalText(cpf, config.cpf) && equalText(passwordInput, config.password);
+  return config.accounts.some(account => equalText(cpf, account.cpf) && equalText(passwordInput, account.password));
 }
 
 function signature(payload: string, secret: string) {

@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   if (!hasTeacherSession(request)) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
   try {
-    const students = await listTeacherStudents(allMissions.length);
+    const archived = request.nextUrl.searchParams.get('archived') === 'true';
+    const students = await listTeacherStudents(allMissions.length, archived);
     return NextResponse.json({ students }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';

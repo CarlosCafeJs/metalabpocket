@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findStudentBySessionToken, listStudentInstalabPosts, updateInstalabPost } from '@/server/repository';
+import { findEnrolledStudentBySessionToken, listStudentInstalabPosts, updateInstalabPost } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { sameOrigin } from '@/server/validation';
 import { containsPotentialSensitiveData } from '@/domain/mission-evaluation';
@@ -20,7 +20,7 @@ function validImage(mime: string, bytes: Buffer) {
 export async function PUT(request: NextRequest, context: Context) {
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers: noStore });
   const token = readSessionToken(request);
-  const student = token ? await findStudentBySessionToken(token) : null;
+  const student = token ? await findEnrolledStudentBySessionToken(token) : null;
   if (!student) return NextResponse.json({ error: 'Sua sessão expirou.' }, { status: 401, headers: noStore });
   const postId = (await context.params).postId;
   if (!z.string().uuid().safeParse(postId).success) return NextResponse.json({ error: 'Publicação não encontrada.' }, { status: 404, headers: noStore });

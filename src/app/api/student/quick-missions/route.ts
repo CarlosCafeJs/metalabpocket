@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findStudentBySessionToken, listQuickMissionsForStudent } from '@/server/repository';
+import { findEnrolledStudentBySessionToken, listQuickMissionsForStudent } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 
 export const runtime = 'nodejs';
@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const token = readSessionToken(request);
-  const student = token ? await findStudentBySessionToken(token) : null;
+  const student = token ? await findEnrolledStudentBySessionToken(token) : null;
   if (!student) return NextResponse.json({ error: 'Sua sessão expirou. Entre novamente.' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
   try {
     const modules = await listQuickMissionsForStudent(student.id);

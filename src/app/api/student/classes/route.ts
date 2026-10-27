@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findStudentBySessionToken, getStudentClass, joinStudentClassByCode } from '@/server/repository';
+import { findStudentBySessionToken, getStudentClass, joinStudentClassByCode, listStudentClassmates } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { readJson, sameOrigin } from '@/server/validation';
 import { z } from 'zod';
@@ -13,7 +13,9 @@ export async function GET(request: NextRequest) {
   const student = token ? await findStudentBySessionToken(token) : null;
   if (!student) return NextResponse.json({ error: 'Sua sessão expirou.' }, { status: 401, headers });
   try {
-    return NextResponse.json({ class: await getStudentClass(student.id) }, { headers });
+    const classroom = await getStudentClass(student.id);
+    const classmates = classroom ? await listStudentClassmates(student.id) : [];
+    return NextResponse.json({ class: classroom, classmates }, { headers });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';
     console.error(`student.classes.read failed (${code})`);
@@ -30,7 +32,8 @@ export async function POST(request: NextRequest) {
     const input = z.object({ code: z.string().trim().regex(/^[a-hj-np-z2-9]{8}$/iu) }).strict().parse(await readJson(request, 512));
     const joined = await joinStudentClassByCode(student.id, input.code);
     if (!joined) return NextResponse.json({ error: 'Esse código não corresponde a uma turma ativa.' }, { status: 404, headers });
-    return NextResponse.json({ class: joined }, { headers });
+    const classmates = await listStudentClassmates(student.id);
+    return NextResponse.json({ class: joined, classmates }, { headers });
   } catch (error) {
     if (error instanceof Response) return error;
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'Digite o código de 8 caracteres informado pelo professor.' }, { status: 400, headers });

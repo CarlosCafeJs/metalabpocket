@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { findStudentBySessionToken, getPublishedClassroomMissionTasks, getPublishedClassroomTask, submitClassroomMissionResponse, submitClassroomTask } from '@/server/repository';
+import { findEnrolledStudentBySessionToken, getPublishedClassroomMissionTasks, getPublishedClassroomTask, submitClassroomMissionResponse, submitClassroomTask } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { readJson, sameOrigin } from '@/server/validation';
 
@@ -11,7 +11,7 @@ const missionSchema=z.object({missionId:z.string().uuid(),answers:z.array(z.obje
 const noStore = { 'Cache-Control': 'no-store' };
 export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers: noStore });
-  const token = readSessionToken(request); const student = token ? await findStudentBySessionToken(token) : null;
+  const token = readSessionToken(request); const student = token ? await findEnrolledStudentBySessionToken(token) : null;
   if (!student) return NextResponse.json({ error: 'Sua sessão expirou.' }, { status: 401, headers: noStore });
   try {
     const body=await readJson(request,150000);

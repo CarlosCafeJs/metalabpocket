@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findStudentBySessionToken, revokeSession } from '@/server/repository';
+import { findStudentBySessionToken, getStudentClass, revokeSession } from '@/server/repository';
 import { clearSessionCookie, readSessionToken } from '@/server/session';
 import { sameOrigin } from '@/server/validation';
 
@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
       clearSessionCookie(response);
       return response;
     }
-    return json({ active: true, student });
+    const classroom = await getStudentClass(student.id);
+    return json({ active: true, enrolled: Boolean(classroom), student: { id: student.id, displayName: student.displayName } });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';
     console.error(`session.read failed (${code})`);

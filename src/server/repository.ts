@@ -462,6 +462,7 @@ export async function createOrResumeStudentWithSession(input: {
       SELECT student.id, student.full_name, student.created_at, student.photo_sharing_consent
       FROM metalab_students student
       WHERE LOWER(student.email) = $1 AND student.birth_date = $2::date
+        AND student.archived_at IS NULL
       ORDER BY
         (SELECT COUNT(*) FROM metalab_mission_progress progress
          WHERE progress.student_id = student.id AND progress.status = 'completed') DESC,
@@ -482,6 +483,13 @@ export async function createOrResumeStudentWithSession(input: {
       `, [match.rows[0].id]);
       student = mapStudent(updated.rows[0]);
     } else {
+      const archived = await client.query(`
+        SELECT 1 FROM metalab_students
+        WHERE LOWER(email) = $1 AND birth_date = $2::date AND archived_at IS NOT NULL
+        LIMIT 1
+      `, [input.email, input.birthDate]);
+      if (archived.rowCount) throw new Error('STUDENT_ARCHIVED');
+
       const studentId = randomUUID();
       const created = await client.query<StudentRow>(`
         INSERT INTO metalab_students
@@ -523,8 +531,23 @@ export async function findStudentBySessionToken(token: string) {
     SELECT student.id, student.full_name, student.created_at, student.photo_sharing_consent
     FROM active_session session
     JOIN metalab_students student ON student.id = session.student_id
+    WHERE student.archived_at IS NULL
   `, [tokenHash]);
   return result.rows[0] ? mapStudent(result.rows[0]) : null;
+}
+
+/** Authenticates a student only when they belong to an active classroom. */
+export async function findEnrolledStudentBySessionToken(token: string) {
+  const student = await findStudentBySessionToken(token);
+  if (!student) return null;
+  const membership = await getPool().query(`
+    SELECT 1
+    FROM metalab_student_class_assignments assignment
+    JOIN metalab_classes classroom ON classroom.id = assignment.class_id
+    WHERE assignment.student_id = $1
+    LIMIT 1
+  `, [student.id]);
+  return membership.rowCount ? student : null;
 }
 
 export async function revokeSession(token: string) {
@@ -548,7 +571,7 @@ export async function setStudentPhotoSharingConsent(studentId: string, _consent:
   return result.rows[0]?.photo_sharing_consent === true;
 }
 
-export async function listTeacherStudents(totalMissions: number): Promise<TeacherStudentSummary[]> {
+export async function listTeacherStudents(totalMissions: number, archived = false): Promise<TeacherStudentSummary[]> {
   const result = await getPool().query<{
     id: string;
     full_name: string;
@@ -587,6 +610,7 @@ export async function listTeacherStudents(totalMissions: number): Promise<Teache
     LEFT JOIN metalab_classes class_row ON class_row.id=assignment.class_id
     LEFT JOIN metalab_mission_progress progress ON progress.student_id = student.id
     LEFT JOIN metalab_student_photos photo ON photo.student_id = student.id
+    WHERE student.archived_at IS ${archived ? 'NOT ' : ''}NULL
     GROUP BY student.id, business.name, business.segment, business.description, business.main_offering, business.target_audience, business.differentiator, class_row.id, class_row.name
     ORDER BY last_activity DESC, student.full_name ASC
   `);
@@ -613,8 +637,10 @@ export async function listTeacherStudents(totalMissions: number): Promise<Teache
 
 export async function listTeacherClasses(): Promise<TeacherClass[]> {
   const result = await getPool().query<{ id:string; name:string; join_code:string; student_count:number|string }>(`
-    SELECT class.id,class.name,class.join_code,COUNT(assignment.student_id)::int AS student_count
-    FROM metalab_classes class LEFT JOIN metalab_student_class_assignments assignment ON assignment.class_id=class.id
+    SELECT class.id,class.name,class.join_code,COUNT(student.id)::int AS student_count
+    FROM metalab_classes class
+    LEFT JOIN metalab_student_class_assignments assignment ON assignment.class_id=class.id
+    LEFT JOIN metalab_students student ON student.id=assignment.student_id AND student.archived_at IS NULL
     GROUP BY class.id,class.name,class.join_code ORDER BY class.name
   `);
   return result.rows.map(row=>({id:row.id,name:row.name,joinCode:row.join_code,studentCount:Number(row.student_count)}));
@@ -629,7 +655,7 @@ export async function createTeacherClass(name:string) {
 
 export async function assignStudentToClass(studentId:string,classId:string|null) {
   if(classId===null){await getPool().query(`DELETE FROM metalab_student_class_assignments WHERE student_id=$1`,[studentId]);return true;}
-  const result=await getPool().query(`INSERT INTO metalab_student_class_assignments (student_id,class_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM metalab_students WHERE id=$1) AND EXISTS(SELECT 1 FROM metalab_classes WHERE id=$2) ON CONFLICT(student_id) DO UPDATE SET class_id=EXCLUDED.class_id,assigned_at=NOW() RETURNING student_id`,[studentId,classId]);
+  const result=await getPool().query(`INSERT INTO metalab_student_class_assignments (student_id,class_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM metalab_students WHERE id=$1 AND archived_at IS NULL) AND EXISTS(SELECT 1 FROM metalab_classes WHERE id=$2) ON CONFLICT(student_id) DO UPDATE SET class_id=EXCLUDED.class_id,assigned_at=NOW() RETURNING student_id`,[studentId,classId]);
   return Boolean(result.rowCount);
 }
 
@@ -642,6 +668,19 @@ export async function getStudentClass(studentId: string): Promise<StudentClass |
   `, [studentId]);
   const row = result.rows[0];
   return row ? { id: row.id, name: row.name, joinCode: row.join_code } : null;
+}
+
+export async function listStudentClassmates(studentId: string) {
+  const result = await getPool().query<{ id: string; full_name: string; business_name: string | null }>(`
+    SELECT student.id, student.full_name, business.name AS business_name
+    FROM metalab_student_class_assignments own_assignment
+    JOIN metalab_student_class_assignments class_assignment ON class_assignment.class_id = own_assignment.class_id
+    JOIN metalab_students student ON student.id = class_assignment.student_id AND student.archived_at IS NULL
+    LEFT JOIN metalab_businesses business ON business.student_id = student.id
+    WHERE own_assignment.student_id = $1
+    ORDER BY student.full_name ASC
+  `, [studentId]);
+  return result.rows.map(row => ({ id: row.id, fullName: row.full_name, businessName: row.business_name }));
 }
 
 export async function joinStudentClassByCode(studentId: string, joinCode: string): Promise<StudentClass | null> {
@@ -697,6 +736,7 @@ async function listInstalabPosts(studentId: string, authorOnly = false, teacherV
       ), '[]'::json) AS comments
     FROM metalab_instalab_posts post
     JOIN metalab_students student ON student.id = post.student_id
+      AND ($3::boolean = TRUE OR student.archived_at IS NULL)
     JOIN metalab_businesses business ON business.id = post.business_id
     JOIN metalab_classes class ON class.id = post.class_id
     WHERE ($3::boolean = TRUE OR post.class_id = (SELECT assignment.class_id FROM metalab_student_class_assignments assignment WHERE assignment.student_id = $1))
@@ -724,7 +764,7 @@ export async function createInstalabPost(input: { studentId: string; body: strin
     FROM metalab_students student
     JOIN metalab_student_class_assignments assignment ON assignment.student_id = student.id
     JOIN metalab_businesses business ON business.student_id = student.id
-    WHERE student.id = $7
+    WHERE student.id = $7 AND student.archived_at IS NULL
     RETURNING id
   `, [randomUUID(), input.body, input.imageName, input.imageMimeType, input.imageData?.byteLength ?? null, input.imageData, input.studentId]);
   return result.rows[0]?.id ?? null;
@@ -902,7 +942,7 @@ export async function getTeacherStudent(studentId: string) {
     created_at: Date | string; photo_sharing_consent: boolean;
   }>(`
     SELECT id, full_name, email, birth_date, created_at, photo_sharing_consent
-    FROM metalab_students WHERE id = $1
+    FROM metalab_students WHERE id = $1 AND archived_at IS NULL
   `, [studentId]);
   const row = result.rows[0];
   return row ? {
@@ -915,6 +955,41 @@ export async function getTeacherStudent(studentId: string) {
     createdAt: toIso(row.created_at),
     photoSharingConsent: row.photo_sharing_consent === true
   } : null;
+}
+
+export async function archiveTeacherStudent(studentId: string) {
+  return transaction(async client => {
+    const archived = await client.query(`
+      UPDATE metalab_students
+      SET archived_at = NOW(), updated_at = NOW()
+      WHERE id = $1 AND archived_at IS NULL
+      RETURNING id
+    `, [studentId]);
+    if (!archived.rowCount) return false;
+
+    await client.query(`
+      UPDATE metalab_student_sessions
+      SET revoked_at = COALESCE(revoked_at, NOW())
+      WHERE student_id = $1 AND revoked_at IS NULL
+    `, [studentId]);
+    return true;
+  });
+}
+
+export async function restoreTeacherStudent(studentId: string) {
+  const restored = await getPool().query(`
+    UPDATE metalab_students student
+    SET archived_at = NULL, updated_at = NOW()
+    WHERE student.id = $1 AND student.archived_at IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM metalab_students active
+        WHERE active.id <> student.id AND active.archived_at IS NULL
+          AND LOWER(active.email) = LOWER(student.email)
+          AND active.birth_date = student.birth_date
+      )
+    RETURNING student.id
+  `, [studentId]);
+  return Boolean(restored.rowCount);
 }
 
 export async function listStudentPhotos(studentId: string): Promise<StudentPhotoSummary[]> {

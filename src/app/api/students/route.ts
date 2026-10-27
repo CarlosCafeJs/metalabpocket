@@ -77,6 +77,9 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     if (error instanceof Response) return thrownResponse(error);
+    if (error instanceof Error && error.message === 'STUDENT_ARCHIVED') {
+      return json({ error: 'Este cadastro foi desativado pelo professor. Peça ao professor para restaurá-lo.' }, 403);
+    }
     const code = classifyFailure(error);
     console.error(`students.create failed (${code})`);
     return json({ error: failureMessage(code) }, 503);

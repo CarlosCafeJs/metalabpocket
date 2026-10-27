@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findStudentBySessionToken, setInstalabLike } from '@/server/repository';
+import { findEnrolledStudentBySessionToken, setInstalabLike } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { sameOrigin } from '@/server/validation';
 import { z } from 'zod';
@@ -12,7 +12,7 @@ async function change(request: NextRequest, context: Context, liked: boolean) {
   const headers = { 'Cache-Control': 'no-store' };
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers });
   const token = readSessionToken(request);
-  const student = token ? await findStudentBySessionToken(token) : null;
+  const student = token ? await findEnrolledStudentBySessionToken(token) : null;
   if (!student) return NextResponse.json({ error: 'Sua sessão expirou.' }, { status: 401, headers });
   const { postId } = await context.params;
   if (!z.string().uuid().safeParse(postId).success) return NextResponse.json({ error: 'Publicação não encontrada.' }, { status: 404, headers });

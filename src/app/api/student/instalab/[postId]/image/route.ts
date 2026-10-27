@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findStudentBySessionToken, getStudentInstalabImage } from '@/server/repository';
+import { findEnrolledStudentBySessionToken, getStudentInstalabImage } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { z } from 'zod';
 
@@ -9,7 +9,7 @@ type Context = { params: Promise<{ postId: string }> };
 
 export async function GET(request: NextRequest, context: Context) {
   const token = readSessionToken(request);
-  const student = token ? await findStudentBySessionToken(token) : null;
+  const student = token ? await findEnrolledStudentBySessionToken(token) : null;
   if (!student) return NextResponse.json({ error: 'Sessão necessária.' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
   const postId = (await context.params).postId;
   if (!z.string().uuid().safeParse(postId).success) return NextResponse.json({ error: 'Imagem não encontrada.' }, { status: 404 });

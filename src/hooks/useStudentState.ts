@@ -34,9 +34,10 @@ type StudentState = {
   student: StudentSummary | null;
   business: BusinessProfile | null;
   progress: ProgressSummary | null;
+  enrolled: boolean | null;
 };
 
-const emptyState: StudentState = { student: null, business: null, progress: null };
+const emptyState: StudentState = { student: null, business: null, progress: null, enrolled: null };
 
 function readStudent(payload: Record<string, unknown>): StudentSummary | null {
   const source = (payload.student && typeof payload.student === 'object' ? payload.student : payload) as Record<string, unknown>;
@@ -131,12 +132,15 @@ export function useStudentState() {
       const payload = await response.json() as Record<string, unknown>;
       const student = readStudent(payload);
       if (!student) throw new Error('A sessão recebida está incompleta.');
+      const enrolled = payload.enrolled === true;
       setAuthenticated(true);
-      setState({ student, business: readBusiness(payload.business), progress: readProgress(payload) });
-      try {
-        if (!readBusiness(payload.business)) await refreshBusiness();
-      } catch {
-        // A área do aluno continua utilizável enquanto o perfil do negócio é recuperado depois.
+      setState({ student, business: enrolled ? readBusiness(payload.business) : null, progress: enrolled ? readProgress(payload) : null, enrolled });
+      if (enrolled) {
+        try {
+          if (!readBusiness(payload.business)) await refreshBusiness();
+        } catch {
+          // A área do aluno continua utilizável enquanto o perfil do negócio é recuperado depois.
+        }
       }
     } catch (caught) {
       setAuthenticated(null);

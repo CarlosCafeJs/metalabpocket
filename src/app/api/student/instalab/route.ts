@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createInstalabPost, findStudentBySessionToken, getStudentBusinessAndClass, listStudentInstalabPosts } from '@/server/repository';
+import { createInstalabPost, findEnrolledStudentBySessionToken, getStudentBusinessAndClass, listStudentInstalabPosts } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { sameOrigin } from '@/server/validation';
 import { containsPotentialSensitiveData } from '@/domain/mission-evaluation';
@@ -12,7 +12,7 @@ const allowedImages = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 async function currentStudent(request: NextRequest) {
   const token = readSessionToken(request);
-  return token ? findStudentBySessionToken(token) : null;
+  return token ? findEnrolledStudentBySessionToken(token) : null;
 }
 
 function isValidImage(mime: string, bytes: Buffer) {

@@ -23,7 +23,7 @@ type Detail = {
 };
 type ClassroomTaskType = 'text'|'short_answer'|'multiple_choice'|'checkboxes'|'dropdown'|'linear_scale'|'date'|'complete';
 type ClassroomModule = { id:string; title:string; description:string; position:number; isPublished:boolean; missions:Array<{id:string;moduleId:string;title:string;objective:string;description:string;position:number;isPublished:boolean;tasks:Array<{id:string;prompt:string;description:string;type:ClassroomTaskType;required:boolean;settings:Record<string,unknown>;options:Array<{value:string;label:string}>;position:number;isPublished:boolean;submissionCount:number}>}> };
-type TeacherView = 'central'|'students'|'classes'|'businesses'|'instalab'|'quick'|'classroom';
+type TeacherView = 'central'|'students'|'emails'|'classes'|'businesses'|'instalab'|'quick'|'classroom';
 type TeacherClass = {id:string;name:string;joinCode:string;studentCount:number};
 
 const safeDate = (value: string | null | undefined) => {
@@ -49,6 +49,11 @@ export default function TeacherPanel() {
   const [loginBusy, setLoginBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [students, setStudents] = useState<StudentRow[]>([]);
+  const [archivedStudents, setArchivedStudents] = useState<StudentRow[]>([]);
+  const [archivedLoaded, setArchivedLoaded] = useState(false);
+  const [emailQuery, setEmailQuery] = useState('');
+  const [showArchivedStudents, setShowArchivedStudents] = useState(false);
+  const [studentActionBusy, setStudentActionBusy] = useState(false);
   const [teacherClasses,setTeacherClasses]=useState<TeacherClass[]>([]);
   const [instalabPosts,setInstalabPosts]=useState<InstalabPost[]>([]);
   const [instalabLoaded,setInstalabLoaded]=useState(false);
@@ -78,12 +83,20 @@ export default function TeacherPanel() {
   const [classroomBusy, setClassroomBusy] = useState(false);
   const [classroomMessage, setClassroomMessage] = useState('');
 
-  const loadRoster = useCallback(async () => {
+  const loadRoster = useCallback(async (selectFirst = true) => {
     const response = await fetch('/api/teacher/students', { cache: 'no-store', credentials: 'same-origin' });
     if (!response.ok) throw new Error('Não foi possível carregar a turma.');
     const payload = await response.json() as { students: StudentRow[] };
     setStudents(payload.students);
-    setSelectedId(current => current && payload.students.some(item => item.id === current) ? current : payload.students[0]?.id || '');
+    setSelectedId(current => current && payload.students.some(item => item.id === current) ? current : selectFirst ? payload.students[0]?.id || '' : '');
+  }, []);
+
+  const loadArchivedRoster = useCallback(async () => {
+    const response = await fetch('/api/teacher/students?archived=true', { cache: 'no-store', credentials: 'same-origin' });
+    if (!response.ok) throw new Error('Não foi possível carregar os alunos removidos.');
+    const payload = await response.json() as { students: StudentRow[] };
+    setArchivedStudents(payload.students);
+    setArchivedLoaded(true);
   }, []);
 
   const loadQuickMissions = useCallback(async () => {
@@ -117,6 +130,12 @@ export default function TeacherPanel() {
       .catch(() => setMessage('Não foi possível verificar o acesso agora.'))
       .finally(() => setLoading(false));
   }, [loadRoster, loadQuickMissions, loadClassroom, loadClasses]);
+
+  useEffect(() => {
+    if (authenticated && view === 'emails' && !archivedLoaded) {
+      void loadArchivedRoster().catch(error => setMessage(error instanceof Error ? error.message : 'Não foi possível carregar os e-mails.'));
+    }
+  }, [authenticated, view, archivedLoaded, loadArchivedRoster]);
 
   useEffect(() => {
     if (!authenticated || !selectedId || view !== 'students') { setDetail(null); setDetailBusy(false); return; }
@@ -162,6 +181,26 @@ export default function TeacherPanel() {
     return normalized ? students.filter(item => item.fullName.toLocaleLowerCase('pt-BR').includes(normalized) || item.email.toLocaleLowerCase('pt-BR').includes(normalized) || item.businessName?.toLocaleLowerCase('pt-BR').includes(normalized)) : students;
   }, [query, students]);
 
+  const emailRoster = useMemo(() => {
+    const rows = new Map([...students, ...archivedStudents].map(student => [student.id, student]));
+    const normalized = emailQuery.trim().toLocaleLowerCase('pt-BR');
+    return [...rows.values()].filter(student => !normalized || `${student.fullName} ${student.email} ${student.className || ''}`.toLocaleLowerCase('pt-BR').includes(normalized));
+  }, [students, archivedStudents, emailQuery]);
+
+  async function copyStudentEmails() {
+    const emails = [...new Set(emailRoster.map(student => student.email.trim()).filter(Boolean))];
+    try { await navigator.clipboard.writeText(emails.join('; ')); setMessage(`${emails.length} endereço(s) copiado(s).`); }
+    catch { setMessage('Não foi possível copiar automaticamente. Selecione os endereços na lista.'); }
+  }
+
+  function downloadStudentEmails() {
+    const csvCell = (value: string) => `"${value.replace(/"/gu, '""')}"`;
+    const archivedIds = new Set(archivedStudents.map(student => student.id));
+    const csv = [['Nome', 'E-mail', 'Turma', 'Status'], ...emailRoster.map(student => [student.fullName, student.email, student.className || 'Sem turma', archivedIds.has(student.id) ? 'Removido' : 'Ativo'])].map(row => row.map(csvCell).join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'emails-alunos-metalab.csv'; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -182,6 +221,49 @@ export default function TeacherPanel() {
   async function logout() {
     await fetch('/api/teacher/session', { method: 'DELETE', credentials: 'same-origin' }).catch(() => undefined);
     setAuthenticated(false); setStudents([]); setDetail(null); setSelectedId('');
+  }
+
+  async function archiveSelectedStudent() {
+    const student = detail?.student;
+    if (!student || studentActionBusy) return;
+    const confirmed = window.confirm(`Remover ${student.fullName} da lista ativa? O acesso será encerrado. Fotos, entregas e progresso serão preservados e o cadastro poderá ser restaurado.`);
+    if (!confirmed) return;
+
+    setStudentActionBusy(true);
+    setMessage('');
+    try {
+      const response = await fetch(`/api/teacher/students/${student.id}`, { method: 'DELETE', credentials: 'same-origin' });
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível remover o aluno.');
+      setDetail(null);
+      setSelectedId('');
+      setMessage('Aluno removido da lista ativa. O histórico foi preservado; você pode restaurar o cadastro em “Ver removidos”.');
+      await loadRoster();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível remover o aluno.');
+    } finally {
+      setStudentActionBusy(false);
+    }
+  }
+
+  async function restoreStudent(student: StudentRow) {
+    if (studentActionBusy || !window.confirm(`Restaurar o cadastro de ${student.fullName}? O aluno poderá entrar novamente com o e-mail e a data de nascimento cadastrados.`)) return;
+    setStudentActionBusy(true);
+    setMessage('');
+    try {
+      const response = await fetch(`/api/teacher/students/${student.id}`, {
+        method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'restore' })
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível restaurar o aluno.');
+      await Promise.all([loadArchivedRoster(), loadRoster(!showArchivedStudents)]);
+      setMessage('Cadastro restaurado. O aluno pode entrar novamente e o histórico foi mantido.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível restaurar o aluno.');
+    } finally {
+      setStudentActionBusy(false);
+    }
   }
 
   async function createMission(event: FormEvent<HTMLFormElement>) {
@@ -307,8 +389,8 @@ export default function TeacherPanel() {
         <p>Entre com as credenciais institucionais para consultar progresso e fotos compartilhadas pelos alunos.</p>
         {!configured ? <div className="teacher-alert">Acesso ainda não configurado. Defina CPF, senha e segredo de sessão do professor nas variáveis protegidas do servidor.</div> : (
           <form className="teacher-login-form" onSubmit={login}>
-            <label htmlFor="teacher-cpf">CPF do professor</label>
-            <input id="teacher-cpf" name="cpf" inputMode="numeric" autoComplete="username" placeholder="000.000.000-00" maxLength={14} required />
+            <label htmlFor="teacher-cpf">CPF ou identificador docente</label>
+            <input id="teacher-cpf" name="cpf" inputMode="numeric" autoComplete="username" placeholder="CPF ou código de 11 dígitos" maxLength={14} required />
             <label htmlFor="teacher-password">Senha de acesso</label>
             <input id="teacher-password" name="password" type="password" autoComplete="current-password" required />
             <button className="button button-primary button-wide" type="submit" disabled={loginBusy}>{loginBusy ? 'Verificando…' : 'Acessar painel'}</button>
@@ -325,15 +407,16 @@ export default function TeacherPanel() {
     <main className="teacher-page teacher-app">
       <aside className="teacher-sidebar" aria-label="Menu do professor">
         <a href="/docente/painel" className="teacher-brand"><img src="/simulator/assets/metalab-logo.png" alt="MetaLab" /><span>POCKET <i>· PROFESSOR</i></span></a>
-        <nav className="teacher-side-nav">{([['central','⌂','Central'],['students','AL','Alunos'],['classes','TU','Turmas'],['businesses','NE','Empresas dos alunos'],['instalab','IL','InstaLab'],['quick','MR','Missão Relâmpago'],['classroom','MI','Missão da Turma']] as Array<[TeacherView,string,string]>).map(([id,icon,label])=><button type="button" key={id} className={view===id?'is-active':''} onClick={()=>{setView(id);setMessage('');}}><i aria-hidden="true">{icon}</i><span>{label}</span></button>)}</nav>
+        <nav className="teacher-side-nav">{([['central','⌂','Central'],['students','AL','Alunos'],['emails','@','E-mails cadastrados'],['classes','TU','Turmas'],['businesses','NE','Empresas dos alunos'],['instalab','IL','InstaLab'],['quick','MR','Missão Relâmpago'],['classroom','MI','Missão da Turma']] as Array<[TeacherView,string,string]>).map(([id,icon,label])=><button type="button" key={id} className={view===id?'is-active':''} onClick={()=>{setView(id);setMessage('');}}><i aria-hidden="true">{icon}</i><span>{label}</span></button>)}</nav>
         <div className="teacher-sidebar-note"><span>✦</span><div><strong>Ambiente protegido</strong><small>Acompanhamento da turma</small></div></div>
         <button className="teacher-logout" onClick={() => void logout()}>Encerrar acesso</button>
       </aside>
       <div className="teacher-main">
       <header className="teacher-topbar"><div className="teacher-mobile-brand">MetaLab Pocket <span>· Professor</span></div><button className="button button-secondary" onClick={() => void logout()}>Encerrar acesso</button></header>
-      <section className="teacher-heading"><div><span className="section-tag">ACOMPANHAMENTO DA FORMAÇÃO</span><h1>{view==='central'?'Central do professor':view==='students'?'Alunos':view==='classes'?'Turmas':view==='businesses'?'Empresas dos alunos':view==='instalab'?'InstaLab':view==='quick'?'Missão Relâmpago':'Missão da Turma'}</h1><p>{view==='central'?'Resumo da turma, atividades recentes e atalhos para a formação.':view==='instalab'?'Acompanhe e modere as publicações de todas as turmas.':'Área docente · dados restritos à turma autorizada.'}</p></div><div className="teacher-summary"><strong>{students.length}</strong><span>alunos</span><i /><strong>{completionRate}%</strong><span>conclusão média</span></div></section>
+      <section className="teacher-heading"><div><span className="section-tag">ACOMPANHAMENTO DA FORMAÇÃO</span><h1>{view==='central'?'Central do professor':view==='students'?'Alunos':view==='emails'?'E-mails cadastrados':view==='classes'?'Turmas':view==='businesses'?'Empresas dos alunos':view==='instalab'?'InstaLab':view==='quick'?'Missão Relâmpago':'Missão da Turma'}</h1><p>{view==='central'?'Resumo da turma, atividades recentes e atalhos para a formação.':view==='instalab'?'Acompanhe e modere as publicações de todas as turmas.':view==='emails'?'Consulte e exporte os contatos cadastrados, incluindo alunos removidos.':'Área docente · dados restritos à turma autorizada.'}</p></div><div className="teacher-summary"><strong>{students.length}</strong><span>alunos</span><i /><strong>{completionRate}%</strong><span>conclusão média</span></div></section>
       {message && <div className="teacher-alert" role="status">{message}<button aria-label="Fechar aviso" onClick={() => setMessage('')}>×</button></div>}
-      {view==='central'&&<section className="teacher-central"><div className="teacher-central-cards"><button onClick={()=>setView('students')}><strong>{students.length}</strong><span>Alunos acompanhados</span><small>Ver nomes, contatos e progresso →</small></button><button onClick={()=>setView('classes')}><strong>{teacherClasses.length}</strong><span>Turmas</span><small>Criar turma e compartilhar código →</small></button><button onClick={()=>setView('businesses')}><strong>{students.filter(item=>item.businessName).length}</strong><span>Empresas cadastradas</span><small>Ver negócios da turma →</small></button><button onClick={()=>setView('quick')}><strong>{quickModules.filter(item=>item.isPublished).length}</strong><span>Módulos relâmpago liberados</span><small>Organizar desafios de aula →</small></button><button onClick={()=>setView('classroom')}><strong>{classroomModules.filter(item=>item.isPublished).length}</strong><span>Módulos da turma liberados</span><small>Organizar trilha da turma →</small></button></div><section className="teacher-subsection"><div className="teacher-subhead"><div><span className="teacher-kicker">RECENTES</span><h3>Últimos alunos ativos</h3></div><button className="button button-secondary" onClick={()=>setView('students')}>Abrir lista de alunos</button></div>{students.slice(0,5).map(student=><button className="teacher-recent-student" key={student.id} onClick={()=>{setSelectedId(student.id);setView('students');}}><span className="teacher-avatar">{student.fullName.charAt(0).toUpperCase()}</span><span><strong>{student.fullName}</strong><small>{student.businessName||student.email}</small></span><small>{formatDateTime(student.lastActivity)}</small></button>)}</section></section>}
+      {view==='central'&&<section className="teacher-central"><div className="teacher-central-cards"><button onClick={()=>setView('students')}><strong>{students.length}</strong><span>Alunos acompanhados</span><small>Ver nomes, contatos e progresso →</small></button><button onClick={()=>setView('emails')}><strong>{students.length+archivedStudents.length}</strong><span>E-mails cadastrados</span><small>Consultar e exportar contatos →</small></button><button onClick={()=>setView('classes')}><strong>{teacherClasses.length}</strong><span>Turmas</span><small>Criar turma e compartilhar código →</small></button><button onClick={()=>setView('businesses')}><strong>{students.filter(item=>item.businessName).length}</strong><span>Empresas cadastradas</span><small>Ver negócios da turma →</small></button><button onClick={()=>setView('quick')}><strong>{quickModules.filter(item=>item.isPublished).length}</strong><span>Módulos relâmpago liberados</span><small>Organizar desafios de aula →</small></button><button onClick={()=>setView('classroom')}><strong>{classroomModules.filter(item=>item.isPublished).length}</strong><span>Módulos da turma liberados</span><small>Organizar trilha da turma →</small></button></div><section className="teacher-subsection"><div className="teacher-subhead"><div><span className="teacher-kicker">RECENTES</span><h3>Últimos alunos ativos</h3></div><button className="button button-secondary" onClick={()=>setView('students')}>Abrir lista de alunos</button></div>{students.slice(0,5).map(student=><button className="teacher-recent-student" key={student.id} onClick={()=>{setSelectedId(student.id);setView('students');}}><span className="teacher-avatar">{student.fullName.charAt(0).toUpperCase()}</span><span><strong>{student.fullName}</strong><small>{student.businessName||student.email}</small></span><small>{formatDateTime(student.lastActivity)}</small></button>)}</section></section>}
+      {view==='emails'&&<section className="teacher-email-admin"><header className="teacher-email-toolbar"><div><span className="teacher-kicker">CADASTROS DA PLATAFORMA</span><h2>Contatos dos alunos</h2><p>Lista restrita ao professor. Alunos ativos e removidos aparecem identificados para facilitar a conferência.</p></div><div className="teacher-email-actions"><button type="button" className="button button-secondary" onClick={()=>void Promise.all([loadRoster(false),loadArchivedRoster()]).catch(error=>setMessage(error instanceof Error?error.message:'Não foi possível atualizar os contatos.'))}>Atualizar</button><button type="button" className="button button-secondary" disabled={!archivedLoaded||!emailRoster.length} onClick={()=>void copyStudentEmails()}>Copiar e-mails</button><button type="button" className="button button-primary" disabled={!archivedLoaded||!emailRoster.length} onClick={downloadStudentEmails}>Baixar CSV</button></div></header><label className="teacher-email-search">Buscar aluno ou e-mail<input value={emailQuery} onChange={event=>setEmailQuery(event.target.value)} placeholder="Digite um nome, e-mail ou turma" /></label><div className="teacher-email-count">{emailRoster.length} {emailRoster.length===1?'cadastro encontrado':'cadastros encontrados'} · {new Set(emailRoster.map(student=>student.email.toLocaleLowerCase('pt-BR'))).size} e-mails únicos</div>{emailRoster.length?<div className="teacher-email-list"><div className="teacher-email-list-head"><span>Aluno</span><span>E-mail</span><span>Turma</span><span>Status</span></div>{emailRoster.map(student=>{const archived=archivedStudents.some(item=>item.id===student.id);return <article key={student.id}><span><strong>{student.fullName}</strong><small>{formatDate(student.createdAt)}</small></span><a href={`mailto:${student.email}`}>{student.email}</a><span>{student.className||'Sem turma'}</span><span className={`teacher-email-status${archived?' is-archived':''}`}>{archived?'Removido':'Ativo'}</span></article>;})}</div>:<div className="teacher-empty-detail">{archivedLoaded?'Nenhum aluno corresponde à busca.':'Carregando cadastros…'}</div>}</section>}
       {view==='quick'&&<section className="teacher-quick-admin"><div className="teacher-subhead"><div><span className="teacher-kicker">DESAFIOS DA AULA</span><h2>Missão Relâmpago</h2></div><span>{quickModules.filter(item=>item.isPublished).length} módulos liberados</span></div><p>Crie módulos para organizar os desafios rápidos. O botão de liberação do módulo controla todas as missões dentro dele.</p>
         <form className="teacher-quick-form teacher-create-module" onSubmit={createQuickModule}><h3>Novo módulo de Missão Relâmpago</h3><label>Nome do módulo<input name="title" minLength={3} maxLength={120} placeholder="Ex.: Vitrine e fotografia de produto" required /></label><label>Descrição<textarea name="description" maxLength={1000} rows={2} placeholder="Tema ou objetivo do conjunto de desafios." /></label><button className="button button-primary" disabled={missionBusy}>Criar módulo</button></form>
         {quickSelectedId&&<form className="teacher-quick-form" onSubmit={createMission}><h3>Adicionar missão ao módulo</h3><label>Módulo<select name="moduleId" value={quickSelectedId} onChange={event=>setQuickSelectedId(event.target.value)}>{quickModules.map(module=><option value={module.id} key={module.id}>{module.title}</option>)}</select></label><label>Nome da missão<input name="title" minLength={3} maxLength={120} placeholder="Ex.: Apresente seu produto em 3 ângulos" required /></label><label>Descrição<textarea name="description" minLength={3} maxLength={1000} rows={2} placeholder="Contexto breve para a turma." required /></label><label>Solicitação ao aluno<textarea name="request" minLength={3} maxLength={2000} rows={3} placeholder="O que deve produzir, observar ou explicar? Que arquivo precisa anexar?" required /></label><div className="teacher-quick-form-row"><label>Tempo sugerido<select name="estimatedMinutes" defaultValue="15">{[5,10,15,20,30,45,60,90,120,180].map(value=><option value={value} key={value}>{value} minutos</option>)}</select></label><label>Prazo (opcional)<input name="dueAt" type="datetime-local" /></label></div><button className="button button-secondary" disabled={missionBusy}>Adicionar missão</button><span className="teacher-quick-feedback" role="status">{missionMessage}</span></form>}
@@ -378,11 +461,11 @@ export default function TeacherPanel() {
         </div>})()}
       </section>}
       {view==='students'&&<div className="teacher-workspace">
-        <aside className="teacher-roster"><div className="teacher-roster-title"><div><span className="section-tag">ALUNOS</span><h2>{students.length} registros</h2></div><button aria-label="Atualizar lista" title="Atualizar lista" onClick={() => void loadRoster().catch(error => setMessage(error.message))}>↻</button></div><input className="teacher-search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar nome, e-mail ou empresa" aria-label="Buscar aluno, e-mail ou empresa" />
-          {filtered.length ? <div className="teacher-roster-list">{filtered.map(student => <button key={student.id} className={`teacher-student-row ${selectedId === student.id ? 'is-selected' : ''}`} onClick={() => { setSelectedId(student.id); setMessage(''); }}><span className="teacher-avatar">{student.fullName.charAt(0).toUpperCase()}</span><span className="teacher-student-copy"><strong>{student.fullName}</strong><small>{student.email}</small><small>Nascimento: {formatDate(`${student.birthDate}T12:00:00`)}</small><span className="teacher-mini-progress"><i style={{ width: `${Math.round(student.completedMissions / Math.max(1, student.totalMissions) * 100)}%` }} /></span></span><span className="teacher-student-count">{student.completedMissions}/{student.totalMissions}</span></button>)}</div> : <p className="teacher-empty-roster">{students.length ? 'Nenhum resultado para essa busca.' : 'Ainda não há alunos cadastrados.'}</p>}
+        <aside className="teacher-roster"><div className="teacher-roster-title"><div><span className="section-tag">{showArchivedStudents ? 'REMOVIDOS' : 'ALUNOS'}</span><h2>{showArchivedStudents ? archivedStudents.length : students.length} registros</h2></div><div className="teacher-roster-actions"><button type="button" className="teacher-archive-toggle" onClick={() => { const next = !showArchivedStudents; setShowArchivedStudents(next); setSelectedId(''); setDetail(null); setMessage(''); if (next) void loadArchivedRoster().catch(error => setMessage(error.message)); else void loadRoster().catch(error => setMessage(error.message)); }}>{showArchivedStudents ? '← Alunos ativos' : 'Ver removidos'}</button><button aria-label="Atualizar lista" title="Atualizar lista" onClick={() => void (showArchivedStudents ? loadArchivedRoster() : loadRoster()).catch(error => setMessage(error.message))}>↻</button></div></div><input className="teacher-search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar nome, e-mail ou empresa" aria-label="Buscar aluno, e-mail ou empresa" />
+          {showArchivedStudents ? archivedStudents.length ? <div className="teacher-roster-list">{archivedStudents.filter(item => !query.trim() || item.fullName.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')) || item.email.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR'))).map(student => <article key={student.id} className="teacher-student-row teacher-archived-row"><span className="teacher-avatar">{student.fullName.charAt(0).toUpperCase()}</span><span className="teacher-student-copy"><strong>{student.fullName}</strong><small>{student.email}</small><small>Removido · progresso preservado</small></span><button type="button" className="teacher-restore-student" disabled={studentActionBusy} onClick={() => void restoreStudent(student)}>Restaurar</button></article>)}</div> : <p className="teacher-empty-roster">Nenhum aluno removido.</p> : filtered.length ? <div className="teacher-roster-list">{filtered.map(student => <button key={student.id} className={`teacher-student-row ${selectedId === student.id ? 'is-selected' : ''}`} onClick={() => { setSelectedId(student.id); setMessage(''); }}><span className="teacher-avatar">{student.fullName.charAt(0).toUpperCase()}</span><span className="teacher-student-copy"><strong>{student.fullName}</strong><small>{student.email}</small><small>Nascimento: {formatDate(`${student.birthDate}T12:00:00`)}</small><span className="teacher-mini-progress"><i style={{ width: `${Math.round(student.completedMissions / Math.max(1, student.totalMissions) * 100)}%` }} /></span></span><span className="teacher-student-count">{student.completedMissions}/{student.totalMissions}</span></button>)}</div> : <p className="teacher-empty-roster">{students.length ? 'Nenhum resultado para essa busca.' : 'Ainda não há alunos cadastrados.'}</p>}
         </aside>
         <section className="teacher-detail">{detailBusy ? <div className="teacher-empty-detail">Carregando dados do aluno…</div> : detail ? <>
-          <header className="teacher-detail-head"><div><span className="section-tag">ALUNO · DESDE {formatDate(detail.student.createdAt).toUpperCase()}</span><h2>{detail.student.fullName}</h2><p>{detail.business?.name || 'Projeto de negócio em construção'}{detail.business?.segment ? ` · ${detail.business.segment}` : ''}</p><div className="teacher-student-meta"><span>E-mail: {detail.student.email}</span><span>Nascimento: {formatDate(`${detail.student.birthDate}T12:00:00`)}</span><span>Fotos da Câmera: disponíveis automaticamente</span></div></div><div className="teacher-score"><strong>{detail.progress.completedMissions}<small>/{detail.progress.totalMissions}</small></strong><span>missões concluídas</span><button className="button button-primary print-hidden" type="button" disabled={printBusy} onClick={() => void printStudentReport()}>{printBusy ? 'Preparando imagens…' : 'Salvar relatório em PDF'}</button></div></header>
+          <header className="teacher-detail-head"><div><span className="section-tag">ALUNO · DESDE {formatDate(detail.student.createdAt).toUpperCase()}</span><h2>{detail.student.fullName}</h2><p>{detail.business?.name || 'Projeto de negócio em construção'}{detail.business?.segment ? ` · ${detail.business.segment}` : ''}</p><div className="teacher-student-meta"><span>E-mail: {detail.student.email}</span><span>Nascimento: {formatDate(`${detail.student.birthDate}T12:00:00`)}</span><span>Fotos da Câmera: disponíveis automaticamente</span></div></div><div className="teacher-score"><strong>{detail.progress.completedMissions}<small>/{detail.progress.totalMissions}</small></strong><span>missões concluídas</span><button className="button button-primary print-hidden" type="button" disabled={printBusy} onClick={() => void printStudentReport()}>{printBusy ? 'Preparando imagens…' : 'Salvar relatório em PDF'}</button><button className="teacher-remove-student print-hidden" type="button" disabled={studentActionBusy} onClick={() => void archiveSelectedStudent()}>{studentActionBusy ? 'Salvando…' : 'Remover aluno'}</button></div></header>
           <section className="teacher-class-assignment print-hidden"><div><span className="teacher-kicker">VÍNCULO DE TURMA</span><strong>{students.find(student=>student.id===selectedId)?.className||'Aluno sem turma'}</strong><small>Esta associação é salva no banco e aparece na lista de alunos.</small></div><label>Adicionar ou mover para turma<select value={students.find(student=>student.id===selectedId)?.classId||''} disabled={classBusy} onChange={event=>void saveClass('assign',{studentId:selectedId,classId:event.target.value||null})}><option value="">Sem turma</option>{teacherClasses.map(item=><option value={item.id} key={item.id}>{item.name} · {item.studentCount}</option>)}</select></label><form onSubmit={event=>{event.preventDefault();void saveClass('create',{name:newClassName});}}><label>Criar turma e vincular<input value={newClassName} onChange={event=>setNewClassName(event.target.value)} minLength={2} maxLength={120} placeholder="Ex.: Turma XSDASX" required /></label><button className="button button-secondary" disabled={classBusy}>{classBusy?'Salvando…':'Criar e vincular'}</button></form></section>
           <div className="teacher-progress-track"><i style={{ width: `${Math.round(detail.progress.completedMissions / Math.max(1, detail.progress.totalMissions) * 100)}%` }} /></div>
           {detail.business && <article className="teacher-business"><span className="teacher-kicker">NEGÓCIO DO ALUNO</span><h3>{detail.business.name}</h3><p>{detail.business.description}</p><dl><div><dt>Oferta</dt><dd>{detail.business.mainOffering}</dd></div><div><dt>Público</dt><dd>{detail.business.targetAudience}</dd></div><div><dt>Diferencial</dt><dd>{detail.business.differentiator}</dd></div></dl></article>}

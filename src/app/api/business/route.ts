@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findStudentBySessionToken, getBusiness, upsertBusiness } from '@/server/repository';
+import { findEnrolledStudentBySessionToken, getBusiness, upsertBusiness } from '@/server/repository';
 import { clearSessionCookie, readSessionToken } from '@/server/session';
 import { businessSchema, readJson, sameOrigin } from '@/server/validation';
 
@@ -20,7 +20,7 @@ function thrownResponse(error: Response) {
 
 async function currentStudent(request: NextRequest) {
   const token = readSessionToken(request);
-  return token ? findStudentBySessionToken(token) : null;
+  return token ? findEnrolledStudentBySessionToken(token) : null;
 }
 
 function expiredResponse() {

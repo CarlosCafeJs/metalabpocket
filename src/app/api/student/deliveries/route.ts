@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createStudentDelivery, findStudentBySessionToken, listStudentDeliveries } from '@/server/repository';
+import { createStudentDelivery, findEnrolledStudentBySessionToken, listStudentDeliveries } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { sameOrigin } from '@/server/validation';
 
@@ -12,7 +12,7 @@ const noStore = { 'Cache-Control': 'no-store' };
 
 async function studentFor(request: NextRequest) {
   const token = readSessionToken(request);
-  return token ? findStudentBySessionToken(token) : null;
+  return token ? findEnrolledStudentBySessionToken(token) : null;
 }
 
 export async function GET(request: NextRequest) {

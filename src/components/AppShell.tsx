@@ -36,7 +36,8 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
   useEffect(() => {
     setHydrated(true);
     if (!session.loading && session.authenticated === false) router.replace('/');
-  }, [router, session.authenticated, session.loading]);
+    if (!session.loading && session.authenticated && session.enrolled === false && pathname !== '/turmas') router.replace('/turmas');
+  }, [router, pathname, session.authenticated, session.enrolled, session.loading]);
 
   async function leave() {
     await fetch('/api/session', { method: 'DELETE', credentials: 'same-origin' }).catch(() => undefined);
@@ -46,10 +47,13 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
     router.refresh();
   }
 
+  const needsClass = session.authenticated === true && session.enrolled === false;
+  const blockedByClass = needsClass && pathname !== '/turmas';
+
   return (
     <div className={`app-shell${immersive ? ' immersive-shell' : ''}`}>
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-      <aside className="app-sidebar" aria-label="Navegação principal">
+      {!needsClass && <aside className="app-sidebar" aria-label="Navegação principal">
         <Link className="shell-brand" href="/dashboard" aria-label="MetaLab Pocket — Central">
           <Image src="/simulator/assets/metalab-logo.png" alt="MetaLab" width={142} height={84} priority />
           <span>POCKET</span>
@@ -68,11 +72,11 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
           <span aria-hidden="true">✦</span>
           <div><strong>Ambiente protegido</strong><small>Simulações sem redes externas</small></div>
         </div>
-      </aside>
+      </aside>}
 
-      <div className="shell-content">
+      <div className={`shell-content${needsClass ? ' class-required-shell' : ''}`}>
         <header className="shell-topbar">
-          <div className="mobile-brand"><strong>MetaLab Pocket</strong><span>Ambiente de aprendizagem</span></div>
+          {needsClass ? <Link className="mobile-brand" href="/turmas"><strong>MetaLab Pocket</strong><span>Entre em uma turma para continuar</span></Link> : <div className="mobile-brand"><strong>MetaLab Pocket</strong><span>Ambiente de aprendizagem</span></div>}
           <div className="student-chip" aria-live="polite">
             <span className="student-avatar" aria-hidden="true">{session.student?.displayName?.charAt(0).toUpperCase() || 'M'}</span>
             <div><small>ALUNO</small><strong>{session.loading ? 'Carregando…' : session.student?.displayName || 'Estudante'}</strong></div>
@@ -80,15 +84,15 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
           <button className="text-button" type="button" onClick={leave}>Encerrar</button>
         </header>
 
-        <nav className="mobile-nav" aria-label="Navegação móvel">
+        {!needsClass && <nav className="mobile-nav" aria-label="Navegação móvel">
           {navigation.map(item => {
             const active = hydrated && (pathname === item.href || (item.href === '/missoes' && pathname.startsWith('/missoes/')));
             return <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>{item.label}</Link>;
           })}
-        </nav>
+        </nav>}
 
         <main id="main-content" className={`shell-main${immersive ? ' immersive-main' : ''}`}>
-          {(eyebrow || title || description || actions) && (
+          {blockedByClass ? <section className="student-class-required" role="status"><span className="section-tag">ACESSO À FORMAÇÃO</span><h1>Entre em uma turma para continuar</h1><p>Peça o código ao professor e informe-o na página Turmas. Depois disso, as atividades e os dados da formação serão liberados para sua conta.</p><Link className="button button-primary" href="/turmas">Ir para Turmas <span aria-hidden="true">→</span></Link></section> : (eyebrow || title || description || actions) && (
             <header className="page-heading">
               <div>
                 {eyebrow && <span className="section-tag">{eyebrow}</span>}
@@ -98,8 +102,8 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
               {actions && <div className="page-actions">{actions}</div>}
             </header>
           )}
-          {!immersive && session.error && <div className="inline-notice" role="status">Sua sessão será sincronizada quando a conexão voltar. Você ainda pode consultar o conteúdo local.</div>}
-          {children}
+          {!blockedByClass && !immersive && session.error && <div className="inline-notice" role="status">Sua sessão será sincronizada quando a conexão voltar. Você ainda pode consultar o conteúdo local.</div>}
+          {!blockedByClass && children}
         </main>
       </div>
     </div>

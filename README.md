@@ -24,7 +24,9 @@ Publicações fictícias, conversas e a galeria do celular ficam separadas por i
 4. Rode `npm run db:migrate` para aplicar migrações versionadas uma vez.
 5. Rode `npm run dev` e acesse `http://localhost:3000`.
 
-Para habilitar a área do professor, configure no servidor `METALAB_TEACHER_CPF`, `METALAB_TEACHER_PASSWORD` (mínimo de 12 caracteres) e `METALAB_TEACHER_SESSION_SECRET` (segredo aleatório com pelo menos 32 caracteres). O painel fica em `/docente/painel`, não aparece na navegação do aluno e exige CPF e senha. Configure os mesmos segredos como variáveis protegidas na Vercel; nunca os publique no repositório.
+Para habilitar a área do professor, configure no servidor `METALAB_TEACHER_CPF`, `METALAB_TEACHER_PASSWORD` (mínimo de 12 caracteres) e `METALAB_TEACHER_SESSION_SECRET` (segredo aleatório com pelo menos 32 caracteres). Um segundo acesso opcional usa `METALAB_TEACHER_2_CPF` e `METALAB_TEACHER_2_PASSWORD`; esse identificador aceita 11 dígitos sem validar identidade civil e pode ser fictício, mas exige senha forte própria. Configure as credenciais localmente em `.env.local` e como variáveis protegidas no serviço da Railway; nunca as publique no repositório.
+
+Na área de alunos, “Remover aluno” desativa o acesso, revoga as sessões e tira o cadastro da lista ativa. Para proteger dados reais, fotos, entregas, progresso e vínculos ficam preservados; o professor pode consultar “Ver removidos” e restaurar o cadastro. A migração `010_student_archive.sql` adiciona apenas a marca de arquivamento e um índice, sem apagar ou reescrever registros.
 
 ### PostgreSQL local para testes
 
@@ -44,7 +46,7 @@ Essas credenciais são apenas para o banco local descartável e nunca devem ser 
 
 ## Publicação na Vercel
 
-Importe o repositório `CarlosCafeJs/metalabpocket` com o preset **Next.js**. Configure `DATABASE_URL`, `METALAB_TEACHER_CPF`, `METALAB_TEACHER_PASSWORD` e `METALAB_TEACHER_SESSION_SECRET` como variáveis protegidas no painel da Vercel. Execute as migrações uma vez em ambiente controlado com a mesma conexão, depois publique. Não coloque credenciais em variáveis `NEXT_PUBLIC_*`, no código-fonte, em commits ou em comandos registrados no terminal.
+Importe o repositório `CarlosCafeJs/metalabpocket` com o preset **Next.js**. Configure `DATABASE_URL`, `METALAB_TEACHER_CPF`, `METALAB_TEACHER_PASSWORD` e `METALAB_TEACHER_SESSION_SECRET` como variáveis protegidas no painel da Vercel; configure também `METALAB_TEACHER_2_CPF` e `METALAB_TEACHER_2_PASSWORD` se usar o segundo acesso. Execute as migrações uma vez em ambiente controlado com a mesma conexão, depois publique. Não coloque credenciais em variáveis `NEXT_PUBLIC_*`, no código-fonte, em commits ou em comandos registrados no terminal.
 
 Para PostgreSQL Railway, use a URL pública TCP Proxy em `DATABASE_URL`. O Postgres padrão do Railway cria uma CA e um certificado próprios; para manter a validação TLS na Vercel, copie o certificado público `/var/lib/postgresql/data/certs/root.crt` pelo Shell do serviço Postgres Railway e salve seu conteúdo como variável protegida `DATABASE_CA` na Vercel. Configure também `DATABASE_SSL_SERVERNAME=localhost`, nome presente no certificado Railway. Mantenha `DATABASE_SSL=true` e `DATABASE_SSL_REJECT_UNAUTHORIZED=true`. Alterações nas variáveis só valem em uma nova implantação. A conexão externa usa o proxy público do Railway; serviços dentro da Railway podem usar a rede privada. Consulte a [documentação do PostgreSQL Railway](https://docs.railway.com/databases/postgresql) e o [script oficial que gera os certificados](https://github.com/railwayapp-templates/postgres-ssl/blob/main/init-ssl.sh).
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteStudentPhoto, findStudentBySessionToken, saveStudentPhoto } from '@/server/repository';
+import { deleteStudentPhoto, findEnrolledStudentBySessionToken, saveStudentPhoto } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { sameOrigin } from '@/server/validation';
 
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   if (!sessionToken) return json({ error: 'Entre no MetaLab Pocket para compartilhar suas fotos.' }, 401);
 
   try {
-    const student = await findStudentBySessionToken(sessionToken);
+    const student = await findEnrolledStudentBySessionToken(sessionToken);
     if (!student) return json({ error: 'Sessão expirada.' }, 401);
     const mimeType = request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() || '';
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(mimeType)) return json({ error: 'Formato de imagem não permitido.' }, 415);
@@ -94,7 +94,7 @@ export async function DELETE(request: NextRequest) {
   if (!sessionToken) return json({ error: 'Entre no MetaLab Pocket para remover suas fotos.' }, 401);
 
   try {
-    const student = await findStudentBySessionToken(sessionToken);
+    const student = await findEnrolledStudentBySessionToken(sessionToken);
     if (!student) return json({ error: 'Sessão expirada.' }, 401);
     const clientPhotoId = request.headers.get('x-metalab-photo-id') || '';
     if (!/^[a-zA-Z0-9_-]{1,100}$/u.test(clientPhotoId)) return json({ error: 'Identificador da foto inválido.' }, 400);
