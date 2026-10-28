@@ -27,11 +27,32 @@
         <div class="quick-angles" role="group" aria-label="Ângulos prontos">
           <button type="button" data-preset="front" class="active">Frente</button><button type="button" data-preset="threequarter">3/4</button><button type="button" data-preset="side">Lado</button><button type="button" data-preset="back">Verso</button><button type="button" data-preset="top">De cima</button>
         </div>
-        <div class="control-grid">
-          <label>Girar em volta <output id="angleValue" for="angle">0°</output><input id="angle" type="range" min="-180" max="180" value="0"></label>
-          <label>Altura do celular <output id="heightValue" for="height">15 cm</output><input id="height" type="range" min="7" max="29" value="15"></label>
-          <label>Distância <output id="distanceValue" for="distance">Média</output><input id="distance" type="range" min="27" max="55" value="38"></label>
-        </div>
+        <label class="quick-zoom" for="distance"><span>Aproximar ou afastar</span><output id="distanceValue" for="distance">Média</output><input id="distance" type="range" min="27" max="55" value="38"></label>
+        <section class="lighting-quick" aria-label="Escolha uma iluminação">
+          <span class="step">ILUMINAÇÃO</span>
+          <div class="lighting-presets" role="group" aria-label="Cenário de iluminação">
+            <button type="button" data-light-preset="natural" aria-pressed="true">Natural</button><button type="button" data-light-preset="professional" aria-pressed="false">Estúdio</button><button type="button" data-light-preset="warm" aria-pressed="false">Quente</button><button type="button" data-light-preset="dramatic" aria-pressed="false">Dramático</button>
+          </div>
+        </section>
+        <details class="advanced-settings">
+          <summary>Ajustes da foto <span>Rotação, altura e luz fina</span></summary>
+          <div class="advanced-settings-body">
+            <div class="control-grid">
+              <label>Girar em volta <output id="angleValue" for="angle">0°</output><input id="angle" type="range" min="-180" max="180" value="0"></label>
+              <label>Altura do celular <output id="heightValue" for="height">15 cm</output><input id="height" type="range" min="7" max="29" value="15"></label>
+            </div>
+            <section class="lighting-panel" aria-labelledby="lighting-title">
+              <div class="lighting-heading"><div><span class="step">FOTOGRAFE SEU PRODUTO</span><h2 id="lighting-title">Iluminação</h2></div><button type="button" id="lightingReset" class="lighting-reset">Restaurar padrão</button></div>
+              <div class="lighting-controls">
+                <label class="lighting-toggle"><input id="spotLightEnabled" type="checkbox" checked><span>Luminária ligada</span></label>
+                <label class="simple-intensity">Intensidade da luz <output id="spotLightValue" for="spotLightIntensity">65%</output><input id="spotLightIntensity" type="range" min="0" max="100" step="1" value="65"></label>
+                <fieldset class="light-direction"><legend>Posição da luz</legend><div role="group" aria-label="Posição da luz"><button type="button" data-light-direction="left" aria-pressed="false">Esquerda</button><button type="button" data-light-direction="front" aria-pressed="true">Frente</button><button type="button" data-light-direction="right" aria-pressed="false">Direita</button></div></fieldset>
+              </div>
+              <p id="lightingTip" class="lighting-tip" role="status">A luz natural simula a entrada de luz lateral e mantém sombras suaves.</p>
+              <p class="lighting-note">A luz natural é simulada. O preenchimento automático aproxima a luz rebatida nas paredes.</p>
+            </section>
+          </div>
+        </details>
         <div class="helper" id="productHelper"><b>Dica para começar:</b> use “3/4” para mostrar a alça, o formato e a marca discreta. Inclua uma foto de cima para mostrar o interior.</div>
         <section class="lesson-grid" aria-label="Orientações para fotografar um produto">
           <article><span class="number">01</span><h3>Mostre o que está à venda</h3><p>Use um fundo simples e deixe a peça inteira no quadro. Na primeira foto, a pessoa precisa reconhecer o produto sem adivinhar.</p></article>
@@ -41,9 +62,9 @@
         </section>
       </div>
 
-      <aside class="preview-column" aria-label="Visor do celular virtual">
+      <aside class="preview-column" aria-label="Visor e controles da câmera virtual">
         <div class="preview-heading"><div><span class="step">VISOR AO VIVO</span><h2>O que o celular vê</h2></div><span class="sim-chip">SIMULAÇÃO</span></div>
-        <div class="device" id="previewDevice" aria-label="Celular 3D com visor de câmera interativo"><canvas id="previewPhoneModel" class="preview-phone-model" aria-hidden="true"></canvas><div class="device-interface"><div class="device-top"><span>9:41</span><span>▮ ▮ 100%</span></div><div class="viewfinder"><canvas id="preview" aria-label="Prévia tridimensional da fotografia conforme a posição do celular"></canvas><div class="grid-lines" aria-hidden="true"></div><span class="preview-badge">META<span>LAB</span> · AULA</span></div><div class="device-bottom"><span>FOTO</span><button type="button" id="capture" class="shutter" aria-label="Fotografar e salvar na galeria do celular" disabled></button><span>3D</span></div><div class="gesture-bar"></div></div></div>
+        <div class="device" id="previewDevice" aria-label="Celular virtual com prévia da câmera"><div class="device-interface"><div class="device-top"><span>9:41</span><span>▮ ▮ 100%</span></div><div class="viewfinder"><canvas id="preview" aria-label="Prévia tridimensional da fotografia conforme a posição do celular"></canvas><div class="grid-lines" aria-hidden="true"></div><span class="preview-badge">META<span>LAB</span> · AULA</span></div><div class="device-bottom"><button type="button" id="capture" class="shutter" aria-label="Fotografar e salvar na galeria do celular" disabled><span class="shutter-label">Fotografar</span></button></div><div class="gesture-bar"></div></div></div>
         <div id="angleFeedback" class="feedback" role="status" aria-live="polite"></div>
         <div class="capture-section"><div class="capture-head"><h3>Fotos da sessão</h3><span id="captureCount">0/10</span></div><div id="captures" class="capture-list"><p>Toque no botão da câmera. A foto será salva na Galeria do celular e ficará disponível para o professor.</p></div></div>
       </aside>

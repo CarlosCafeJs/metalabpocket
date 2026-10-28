@@ -8,6 +8,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "db:migrate": "node scripts/migrate.mjs",
+    "instalab:bill": "node scripts/bill-instalab-campaigns.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --test"
   },

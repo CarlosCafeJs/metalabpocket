@@ -24,7 +24,7 @@ const modules=[
     const photos=[['Fim de tarde no ateliê','p1'],['Café da manhã','p2'],['Peças feitas à mão','p3'],['Verde para a vitrine','p4']];
     const appGrid=document.getElementById('appGrid'),dock=document.getElementById('dock'),appPanel=document.getElementById('appPanel');
     function iconButton(app,dockItem=false){
-      const contents=`<span class="tile-icon ${app.cls}">${app.glyph}</span>${dockItem?'':`<span>${app.name}</span>`}`;
+      const contents=`<span class="tile-icon ${app.cls}" aria-hidden="true">${app.glyph}</span><span class="app-name">${app.name}</span>`;
       if(app.id==='camera')return `<a class="app-tile" href="/camera" target="_top" data-launch-camera aria-label="Abrir Câmera MetaLab em tela cheia">${contents}</a>`;
       return `<button class="app-tile" data-app="${app.id}" aria-label="Abrir ${app.name}">${contents}</button>`;
     }
@@ -56,7 +56,19 @@ const modules=[
       ['QUA','Escrever uma legenda curta'],['QUI','Rascunhar um roteiro'],
       ['SEX','Revisar as ideias com o instrutor']
     ];
-    let planNote='',draftCaption='',draftTemplate='Clássico',largeText=false;
+    let planNote='',draftCaption='',draftTemplate='Clássico';
+    const screen=document.getElementById('screen');
+    const expandedViewStorageKey='metalab-pocket-expanded-view-v1';
+    let largeText=false;
+    try{largeText=localStorage.getItem(expandedViewStorageKey)==='true'}catch{}
+    screen.classList.toggle('font-large',largeText);
+    function setExpandedView(enabled){
+      largeText=enabled;
+      screen.classList.toggle('font-large',largeText);
+      const shortcut=document.getElementById('expandedViewShortcut');
+      if(shortcut){shortcut.setAttribute('aria-pressed',String(largeText));shortcut.querySelector('.expanded-view-state').textContent=largeText?'Ativada':'Desativada'}
+      try{localStorage.setItem(expandedViewStorageKey,String(largeText))}catch{}
+    }
     let videoScenes=[0,2,1],videoTitle='Meu produto em três cenas';
 
     function renderGallery(){
@@ -174,21 +186,23 @@ const modules=[
     function renderSettings(){
       appPanel.innerHTML=`${appHeader('Ajustes do simulador')}<div class="app-body">
         <p>Ajuste a leitura dos apps. As conexões externas permanecem indisponíveis.</p>
-        <button class="check-row ${largeText?'done':''}" id="fontToggle" aria-pressed="${largeText}"><span class="check-box">${largeText?'✓':''}</span><span>Texto maior nos apps</span></button>
+        <button class="check-row ${largeText?'done':''}" id="fontToggle" aria-pressed="${largeText}"><span class="check-box" aria-hidden="true">${largeText?'✓':''}</span><span class="check-row-label"><b>Visualização ampliada</b><small>Aumenta textos, ícones e espaços para facilitar a leitura.</small></span></button>
         <div class="safe-grid"><div class="setting-card"><b>Wi-Fi e dados móveis</b><small class="state-off">Indisponíveis nos apps</small></div><div class="setting-card"><b>Navegador</b><small class="state-off">Não incluído</small></div><div class="setting-card"><b>Contatos reais</b><small class="state-off">Não incluídos</small></div><div class="setting-card"><b>Câmera real</b><small class="state-off">Sem acesso</small></div><div class="setting-card"><b>Publicação externa</b><small class="state-off">Não disponível</small></div><div class="setting-card"><b>Dados de treino</b><small>Salvos neste navegador</small></div></div>
         <div class="notice-box">Para acessar este simulador, a página precisa ser carregada. Dentro do aparelho fictício não há links externos, chamadas de rede ou envio de conteúdo.</div>
       </div>`;
       bindBack();
-      document.getElementById('fontToggle').onclick=()=>{largeText=!largeText;document.getElementById('screen').classList.toggle('font-large',largeText);renderSettings()};
+      document.getElementById('fontToggle').onclick=()=>{setExpandedView(!largeText);renderSettings()};
     }
 
-    const phone=document.getElementById('phone'),turnBtn=document.getElementById('turnBtn'),stage=document.getElementById('stage'),focusBtn=document.getElementById('focusBtn'),focusZoom=document.getElementById('focusZoom');
+    const phone=document.getElementById('phone'),stage=document.getElementById('stage'),focusBtn=document.getElementById('focusBtn');
     drawHome();
+    const expandedViewShortcut=document.getElementById('expandedViewShortcut');
+    expandedViewShortcut.setAttribute('aria-pressed',String(largeText));expandedViewShortcut.querySelector('.expanded-view-state').textContent=largeText?'Ativada':'Desativada';
+    expandedViewShortcut.onclick=()=>setExpandedView(!largeText);
     if(location.hash==='#galeria')openApp('galeria');
     window.addEventListener('hashchange',()=>{if(location.hash==='#galeria')openApp('galeria')});
     document.getElementById('gesture').onclick=closeApp;
-    function setFocus(active){if(active&&(appPanel.classList.contains('open')||phone.classList.contains('show-back')))return;stage.classList.toggle('focus-stage',active);document.body.classList.toggle('focus-active',active);focusBtn.setAttribute('aria-pressed',String(active));focusBtn.textContent=active?'✕ Sair do foco':'⛶ Modo foco';if(active)updateFocusZoom()}
-    function updateFocusZoom(){const fit=Math.min((innerWidth-26)/294,(innerHeight-94)/590,1.45);const requested=Number(focusZoom.value)/100;phone.style.setProperty('--focus-scale',String(Math.max(.55,Math.min(requested,fit))))}
-    focusBtn.onclick=()=>setFocus(!stage.classList.contains('focus-stage'));focusZoom.oninput=updateFocusZoom;window.addEventListener('resize',updateFocusZoom);document.addEventListener('keydown',event=>{if(event.key==='Escape')setFocus(false)});
-    document.getElementById('homeBtn').onclick=()=>{phone.classList.remove('show-back');turnBtn.textContent='⤢ Ver traseira';turnBtn.setAttribute('aria-pressed','false');closeApp()};
-    turnBtn.onclick=()=>{setFocus(false);const back=phone.classList.toggle('show-back');turnBtn.textContent=back?'⤢ Voltar à tela':'⤢ Ver traseira';turnBtn.setAttribute('aria-pressed',String(back))};
+    function setFocus(active){if(active&&appPanel.classList.contains('open'))return;stage.classList.toggle('focus-stage',active);document.body.classList.toggle('focus-active',active);focusBtn.setAttribute('aria-pressed',String(active));focusBtn.textContent=active?'✕ Sair da ampliação':'⛶ Ampliar celular';if(active)updateFocusZoom();else{phone.style.removeProperty('width');phone.style.removeProperty('height')}}
+    function updateFocusZoom(){if(!stage.classList.contains('focus-stage'))return;const ratio=590/294,availableWidth=Math.max(1,innerWidth-32),fitWidth=Math.max(1,Math.min(480,availableWidth,(innerHeight-142)/ratio));phone.style.width=`${fitWidth}px`;phone.style.height=`${fitWidth*ratio}px`}
+    focusBtn.onclick=()=>setFocus(!stage.classList.contains('focus-stage'));window.addEventListener('resize',updateFocusZoom);document.addEventListener('keydown',event=>{if(event.key==='Escape')setFocus(false)});
+    document.getElementById('homeBtn').onclick=closeApp;

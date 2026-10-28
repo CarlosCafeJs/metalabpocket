@@ -34,7 +34,7 @@
   async function syncRecord(record){
     if(!record.blob||!record.blob.size){record.syncError='A imagem local não está disponível.';return 'local-only'}
     try{
-      const response=await fetch('/api/student/photos',{method:'POST',credentials:'same-origin',headers:{'Content-Type':record.blob.type||'image/png','X-MetaLab-Photo-Id':String(record.id),'X-MetaLab-File-Name':encodeURIComponent(record.name||'foto-metalab.png'),'X-MetaLab-Product':encodeURIComponent(record.product||'Produto do curso'),'X-MetaLab-Angle':String(record.angle||0),'X-MetaLab-Height':String(record.height||0)},body:record.blob});
+      const response=await fetch('/api/student/photos',{method:'POST',credentials:'same-origin',headers:{'Content-Type':record.blob.type||'image/png','X-MetaLab-Photo-Id':String(record.id),'X-MetaLab-File-Name':encodeURIComponent(record.name||'foto-metalab.png'),'X-MetaLab-Product':encodeURIComponent(record.product||'Produto do curso'),'X-MetaLab-Angle':String(record.angle||0),'X-MetaLab-Height':String(record.height||0),'X-MetaLab-Lighting':encodeURIComponent(JSON.stringify(record.lighting||{}))},body:record.blob});
       const payload=await response.json().catch(()=>null);
       if(response.ok){record.remotePhotoId=payload?.photoId||record.remotePhotoId;record.syncError='';return 'synced'}
       record.syncError=payload?.error||`Falha ao sincronizar (HTTP ${response.status}).`;
@@ -44,7 +44,7 @@
   async function save(photo){
     if(!(photo.blob instanceof Blob)||photo.blob.size===0)throw new Error('Imagem vazia.');
     const id=global.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const record={id,blob:photo.blob,name:photo.name,product:photo.product,angle:photo.angle,height:photo.height,createdAt:new Date().toISOString()};
+    const record={id,blob:photo.blob,name:photo.name,product:photo.product,angle:photo.angle,height:photo.height,lighting:photo.lighting||{},createdAt:new Date().toISOString()};
     const db=await open();
     await new Promise((resolve,reject)=>{
       const tx=db.transaction(storeName,'readwrite'),store=tx.objectStore(storeName),all=store.getAll();

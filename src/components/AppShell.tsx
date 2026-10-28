@@ -14,6 +14,7 @@ type AppShellProps = {
   description?: string;
   actions?: ReactNode;
   immersive?: boolean;
+  socialMode?: boolean;
 };
 
 const navigation = [
@@ -27,7 +28,7 @@ const navigation = [
   { href: '/celular', label: 'Celular', short: 'CL' }
 ];
 
-export function AppShell({ children, eyebrow, title, description, actions, immersive = false }: AppShellProps) {
+export function AppShell({ children, eyebrow, title, description, actions, immersive = false, socialMode = false }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const session = useStudentState();
@@ -51,9 +52,9 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
   const blockedByClass = needsClass && pathname !== '/turmas';
 
   return (
-    <div className={`app-shell${immersive ? ' immersive-shell' : ''}`}>
+    <div className={`app-shell${immersive ? ' immersive-shell' : ''}${socialMode ? ' social-shell' : ''}`}>
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-      {!needsClass && <aside className="app-sidebar" aria-label="Navegação principal">
+      {!needsClass && !socialMode && <aside className="app-sidebar" aria-label="Navegação principal">
         <Link className="shell-brand" href="/dashboard" aria-label="MetaLab Pocket — Central">
           <Image src="/simulator/assets/metalab-logo.png" alt="MetaLab" width={142} height={84} priority />
           <span>POCKET</span>
@@ -84,7 +85,7 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
           <button className="text-button" type="button" onClick={leave}>Encerrar</button>
         </header>
 
-        {!needsClass && <nav className="mobile-nav" aria-label="Navegação móvel">
+        {!needsClass && !socialMode && <nav className="mobile-nav" aria-label="Navegação móvel">
           {navigation.map(item => {
             const active = hydrated && (pathname === item.href || (item.href === '/missoes' && pathname.startsWith('/missoes/')));
             return <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>{item.label}</Link>;

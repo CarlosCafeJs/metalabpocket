@@ -4,6 +4,7 @@ import { archiveTeacherStudent, getBusiness, getMissionAttempts, getTeacherStude
 import { hasTeacherSession } from '@/server/teacher-auth';
 import { z } from 'zod';
 import { readJson, sameOrigin } from '@/server/validation';
+import { getPool } from '@/server/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,8 +24,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const student = await getTeacherStudent(studentId);
     if (!student) return NextResponse.json({ error: 'Aluno não encontrado.' }, { status: 404 });
-    const [business, attempts, photos, deliveries, classroomSubmissions, classroomProgress, instalabPosts] = await Promise.all([
+    const [business, attempts, photos, deliveries, classroomSubmissions, classroomProgress, instalabPosts, economy] = await Promise.all([
       getBusiness(studentId), getMissionAttempts(studentId), listStudentPhotos(studentId), listStudentDeliveries(studentId), listTeacherClassroomSubmissionsForStudent(studentId), getTeacherClassroomProgress(studentId), listTeacherInstalabPostsForStudent(studentId)
+      , (async()=>{try{const [wallet,campaigns]=await Promise.all([getPool().query(`SELECT COALESCE(SUM(amount),0)::int AS balance,COALESCE(SUM(amount) FILTER (WHERE amount>0),0)::int AS earned,ABS(COALESCE(SUM(amount) FILTER (WHERE amount<0),0))::int AS spent FROM metalab_instalab_wallet_entries WHERE student_id=$1`,[studentId]),getPool().query(`SELECT id,caption,status,budget_limit AS "budgetLimit",amount_spent AS "amountSpent",GREATEST(0,budget_limit-amount_spent) AS "remainingBudget",billing_interval_count AS "paidIntervals",paid_through AS "paidThrough",created_at AS "createdAt",rejection_reason AS "rejectionReason",COALESCE((SELECT COUNT(*) FROM metalab_instalab_campaign_impressions impression WHERE impression.campaign_id=campaign.id),0)::int AS impressions FROM metalab_instalab_campaigns campaign WHERE student_id=$1 ORDER BY created_at DESC`,[studentId])]);return {wallet:wallet.rows[0],campaigns:campaigns.rows};}catch(error){if(error&&typeof error==='object'&&'code'in error&&String(error.code)==='42P01')return null;throw error;}})()
     ]);
     const completedIds = new Set(attempts.filter(attempt => attempt.status === 'completed').map(attempt => attempt.missionId));
     return NextResponse.json({
@@ -34,7 +36,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       photos,
       deliveries,
       classroomSubmissions,
-      instalabPosts
+      instalabPosts,
+      economy
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';

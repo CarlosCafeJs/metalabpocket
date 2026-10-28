@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findEnrolledStudentBySessionToken, listStudentInstalabPosts, updateInstalabPost } from '@/server/repository';
+import { deleteInstalabPost, findEnrolledStudentBySessionToken, listStudentInstalabPosts, updateInstalabPost } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { sameOrigin } from '@/server/validation';
 import { containsPotentialSensitiveData } from '@/domain/mission-evaluation';
@@ -48,6 +48,20 @@ export async function PUT(request: NextRequest, context: Context) {
   }
 }
 
-export async function DELETE() {
-  return NextResponse.json({ error: 'Alunos não podem excluir publicações. Peça ao professor para remover o conteúdo.' }, { status: 403, headers: noStore });
+export async function DELETE(request: NextRequest, context: Context) {
+  if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers: noStore });
+  const token = readSessionToken(request);
+  const student = token ? await findEnrolledStudentBySessionToken(token) : null;
+  if (!student) return NextResponse.json({ error: 'Sua sessão expirou.' }, { status: 401, headers: noStore });
+  const postId = (await context.params).postId;
+  if (!z.string().uuid().safeParse(postId).success) return NextResponse.json({ error: 'Publicação não encontrada.' }, { status: 404, headers: noStore });
+  try {
+    const deleted = await deleteInstalabPost(postId, student.id);
+    if (!deleted) return NextResponse.json({ error: 'Você só pode excluir publicações próprias.' }, { status: 404, headers: noStore });
+    return NextResponse.json({ deleted: true }, { headers: noStore });
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';
+    console.error(`student.instalab.delete failed (${code})`);
+    return NextResponse.json({ error: 'Não foi possível remover a publicação.' }, { status: 503, headers: noStore });
+  }
 }

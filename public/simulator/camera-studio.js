@@ -10,6 +10,7 @@ const $ = (id) => document.getElementById(id);
 const stageCanvas = $('stage');
 const previewCanvas = $('preview');
 const state = { angle: 0, height: 1.5, distance: 3.8, product: 'Caneca de cerâmica', productId: 'mug' };
+const lighting = { key: .65, fill: .9, rim: .25, ambient: 1.3, intensityPercent: 65, spotIntensity: 422.5, spotEnabled: true, spotX: -3.3, spotHeight: 4.8, beam: 45, direction: 'left', temperature: 'neutral', shadows: .3, exposure: 1.12, preset: 'natural' };
 const lowPower = window.innerWidth < 700 || (navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency <= 4);
 const maxPixelRatio = lowPower ? 1.25 : 1.75;
 const presets = {
@@ -20,8 +21,9 @@ const presets = {
   top: { angle: 35, height: 2.9, distance: 3.9 }
 };
 
-let stageRenderer, previewRenderer, scene, productGroup, phone, phoneScreenTexture, ring, stageCamera, phoneCamera;
+let stageRenderer, previewRenderer, scene, productGroup, phone, phoneScreenTexture, ring, stageCamera, phoneCamera, lightSources, roomWalls;
 let renderPending = false;
+let maxTextureAnisotropy = 1;
 const captures = [];
 let lastSavedPhoto;
 let totalCaptureCount = 0;
@@ -36,37 +38,8 @@ const productInfo = {
   shirt: { name: 'Camisas dobradas', file: 'assets/camisas-dobradas.glb', loading: 'Carregando as camisas 3D e suas texturas…', ready: 'Camisas dobradas selecionadas · observe tecido, cores e dobras.', hint: 'Comece com a vista de cima para mostrar a composição simétrica das cores. Faça outra foto lateral para revelar a altura da pilha e as dobras.', lesson: 'Fotografe de cima, em 3/4 e de lado. Mostre a textura do tecido, a organização das peças e o acabamento sem esconder as camisas de baixo.' }
 };
 
-function showPreviewPhone(model,size){
-  const canvas=$('previewPhoneModel');
-  const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'high-performance'});
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,maxPixelRatio));
-  renderer.setClearColor(0,0);
-  renderer.outputColorSpace=THREE.SRGBColorSpace;
-  renderer.toneMapping=THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure=1.3;
-  const displayScene=new THREE.Scene();
-  displayScene.add(new THREE.HemisphereLight('#ffffff','#8ca0b3',2.7));
-  const key=new THREE.DirectionalLight('#ffffff',2.4);key.position.set(-3,5,6);displayScene.add(key);
-  const fill=new THREE.DirectionalLight('#d7eaff',1.2);fill.position.set(3,1,-5);displayScene.add(fill);
-  const root=new THREE.Group();root.add(model);root.scale.setScalar(4/size.y);displayScene.add(root);
-  const camera=new THREE.OrthographicCamera(-1,1,2.17,-2.17,.1,40);
-  camera.position.set(0,0,8);camera.lookAt(0,0,0);
-  function draw(){
-    const width=canvas.clientWidth,height=canvas.clientHeight;
-    if(!width||!height)return;
-    renderer.setSize(width,height,false);
-    const halfH=2.17;
-    camera.left=-halfH*width/height;camera.right=halfH*width/height;
-    camera.top=halfH;camera.bottom=-halfH;camera.updateProjectionMatrix();
-    renderer.render(displayScene,camera);
-  }
-  $('previewDevice').classList.add('model-ready');
-  new ResizeObserver(draw).observe(canvas);
-  draw();
-}
-
 function getLogoTexture(){
-  if(!logoTexturePromise)logoTexturePromise=new THREE.TextureLoader().loadAsync('assets/metalab-logo.png').then(texture=>{texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=8;return texture});
+  if(!logoTexturePromise)logoTexturePromise=new THREE.TextureLoader().loadAsync('assets/metalab-logo.png').then(texture=>{texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=maxTextureAnisotropy;return texture});
   return logoTexturePromise;
 }
 
@@ -82,7 +55,7 @@ async function loadProduct(id){
     const scale=id==='mug'?1.55/size.y:id==='shirt'?2.4/Math.max(size.x,size.z):2.65/Math.max(size.x,size.y,size.z);
     model.scale.setScalar(scale);
     model.position.set(-center.x*scale,-box.min.y*scale,-center.z*scale);
-    model.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true}});
+    model.traverse(obj=>{if(obj.isMesh){obj.castShadow=true;obj.receiveShadow=true;for(const material of (Array.isArray(obj.material)?obj.material:[obj.material]))if(material)for(const value of Object.values(material))if(value?.isTexture){value.anisotropy=maxTextureAnisotropy;value.needsUpdate=true}}});
     const item=new THREE.Group();item.add(model);
     if(id==='mug'){
       try{
@@ -104,7 +77,6 @@ async function loadPhoneModel(){
     const model=gltf.scene,box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
     if(size.y<=0)throw new Error('Modelo do celular sem altura');
     model.position.sub(center);
-    const displayModel=model.clone(true);
     const holder=new THREE.Group();holder.add(model);holder.scale.setScalar(1.1/size.y);
     // Object3D.lookAt aims +Z at the product. Turn the supplied phone so its
     // rear cameras (-Z in the model) face the product and its screen faces us.
@@ -114,7 +86,6 @@ async function loadPhoneModel(){
       new THREE.MeshBasicMaterial({map:phoneScreenTexture,side:THREE.FrontSide,toneMapped:false})
     );
     const screenAspect=(size.x*.75)/(size.y*.84);
-    showPreviewPhone(displayModel,size);
     const viewAspect=previewCanvas.clientWidth/previewCanvas.clientHeight||.75;
     const viewWidth=Math.min(1,screenAspect/viewAspect);
     phoneScreenTexture.repeat.set(viewWidth,1);
@@ -147,31 +118,146 @@ async function selectProduct(id){
 }
 
 function addLights() {
-  scene.add(new THREE.HemisphereLight('#eaf6ff','#7d6352',2.2));
-  const key = new THREE.DirectionalLight('#fff1d8',3.1);
-  key.position.set(-3,7,5); key.castShadow=true; key.shadow.mapSize.set(lowPower?1024:1536,lowPower?1024:1536);
-  key.shadow.camera.left=-7;key.shadow.camera.right=7;key.shadow.camera.top=7;key.shadow.camera.bottom=-7;
-  key.shadow.bias=-.0003; scene.add(key);
-  const fill=new THREE.DirectionalLight('#d6e6ff',1.2);fill.position.set(4,3,-3);scene.add(fill);
+  const ambient=new THREE.HemisphereLight('#eaf6ff','#7d6352',1.35);scene.add(ambient);
+  const key=new THREE.DirectionalLight('#fff1d8',.8);
+  key.position.set(-3,5,4);scene.add(key);
+  const fill=new THREE.DirectionalLight('#d6e6ff',.8);fill.position.set(4,3,-3);scene.add(fill);
+  const rim=new THREE.DirectionalLight('#e6efff',.45);rim.position.set(0,4,-5);scene.add(rim);
+  const spot=new THREE.SpotLight('#fff1d8',260,18,THREE.MathUtils.degToRad(36),.42,2);
+  spot.position.set(-3,4,3);spot.target.position.set(0,.8,0);spot.castShadow=true;
+  spot.shadow.mapSize.set(lowPower?512:1024,lowPower?512:1024);
+  spot.shadow.camera.near=.5;spot.shadow.camera.far=18;spot.shadow.bias=-.00025;spot.shadow.normalBias=.025;spot.shadow.radius=4;
+  scene.add(spot,spot.target);
+  for(const light of [ambient,key,fill,rim,spot])light.layers.enable(2);
+  const helper=new THREE.SpotLightHelper(spot,'#f0b43c');
+  // SpotLightHelper draws its yellow cone through a child LineSegments object.
+  // Layers are per-object in Three.js, so moving only the parent leaves the
+  // line child on layer 0, which the photographic camera also renders.
+  helper.traverse(object=>object.layers.set(1));
+  scene.add(helper);
+  const fixture=new THREE.Group();fixture.name='Fixture de estúdio (visível apenas no cenário de treino)';fixture.layers.set(1);
+  const metal=new THREE.MeshStandardMaterial({color:'#263b53',metalness:.72,roughness:.32});
+  const rimMaterial=new THREE.MeshStandardMaterial({color:'#d6a43a',metalness:.65,roughness:.28});
+  const emitter=new THREE.MeshStandardMaterial({color:'#fff1c8',emissive:'#ffd27b',emissiveIntensity:2.2,roughness:.25});
+  const shade=new THREE.Mesh(new THREE.CylinderGeometry(.48,.22,.52,28,1,true),metal);shade.rotation.x=Math.PI/2;shade.position.z=.25;fixture.add(shade);
+  const bezel=new THREE.Mesh(new THREE.TorusGeometry(.37,.035,8,32),rimMaterial);bezel.position.z=.52;fixture.add(bezel);
+  const lens=new THREE.Mesh(new THREE.CircleGeometry(.31,32),emitter);lens.position.z=.515;fixture.add(lens);
+  const yoke=new THREE.Mesh(new THREE.TorusGeometry(.54,.035,8,32,Math.PI),rimMaterial);yoke.position.z=.2;fixture.add(yoke);
+  const stand=new THREE.Group();stand.layers.set(1);
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.035,.055,1,10),metal);pole.position.y=.5;stand.add(pole);
+  const foot=new THREE.Mesh(new THREE.CylinderGeometry(.36,.4,.07,16),metal);foot.position.y=.035;stand.add(foot);
+  const mount=new THREE.Mesh(new THREE.BoxGeometry(.12,.12,.5),rimMaterial);mount.position.y=1;stand.add(mount);
+  scene.add(fixture,stand);
+  for(const visual of [fixture,stand])visual.traverse(object=>object.layers.set(1));
+  lightSources={ambient,key,fill,rim,spot,helper,fixture,stand,emitter};
+}
+
+const lightingPresets={
+  natural:{key:.65,fill:.9,rim:.25,ambient:1.3,intensityPercent:65,spotEnabled:true,spotX:-3.3,spotHeight:4.8,beam:45,direction:'left',temperature:'neutral',shadows:.3,exposure:1.12,tip:'A luz natural simulada vem de lado e mantém sombras leves para revelar a textura.'},
+  professional:{key:.8,fill:.8,rim:.45,ambient:1.35,intensityPercent:70,spotEnabled:true,spotX:0,spotHeight:4.2,beam:36,direction:'front',temperature:'neutral',shadows:.5,exposure:1.2,tip:'O estúdio equilibra a luz principal e o preenchimento para mostrar forma e acabamento.'},
+  warm:{key:.7,fill:.75,rim:.35,ambient:1.2,intensityPercent:65,spotEnabled:true,spotX:-3.2,spotHeight:4,beam:40,direction:'left',temperature:'warm',shadows:.4,exposure:1.15,tip:'A luz quente dá um tom acolhedor. Confira se as cores do produto continuam fiéis.'},
+  dramatic:{key:.25,fill:.28,rim:.6,ambient:.55,intensityPercent:82,spotEnabled:true,spotX:-3.5,spotHeight:4.4,beam:27,direction:'left',temperature:'neutral',shadows:.9,exposure:1.12,tip:'A luz lateral mais concentrada destaca relevo e cria sombras mais profundas.'}
+};
+
+function applyLighting(){
+  if(!lightSources)return;
+  const {ambient,key,fill,rim,spot,fixture,stand}=lightSources;
+  const positions={left:[-3.3,4.8,2.8],right:[3.3,4.8,2.8],front:[0,4.2,3.6]};
+  const colors={warm:['#ffd0a1','#fff0dc','#ffe1bd'],neutral:['#fff1d8','#eaf6ff','#d6e6ff']};
+  const temperature=colors[lighting.temperature]||colors.neutral;
+  ambient.intensity=lighting.ambient;ambient.color.set(temperature[1]);
+  key.intensity=lighting.key;key.color.set(temperature[0]);key.position.set(-3,5,4);
+  fill.intensity=lighting.fill;fill.color.set(temperature[2]);fill.position.set(-positions[lighting.direction][0]*.8,3,-positions[lighting.direction][2]*.7);
+  rim.intensity=lighting.rim;rim.color.set(temperature[1]);rim.position.set(0,4,-5);
+  const position=positions[lighting.direction]||positions.front;
+  lighting.spotX=position[0];lighting.spotHeight=position[1];
+  spot.color.set(temperature[0]);spot.intensity=lighting.spotEnabled?lighting.intensityPercent*6.5:0;lighting.spotIntensity=lighting.intensityPercent*6.5;lightSources.emitter.emissiveIntensity=lighting.spotEnabled?2.2*lighting.intensityPercent/100:.04;spot.angle=THREE.MathUtils.degToRad(lighting.beam);spot.penumbra=.42;spot.position.set(...position);spot.updateMatrixWorld();
+  spot.target.position.set(0,.85,0);spot.target.updateMatrixWorld();
+  spot.shadow.intensity=lighting.shadows;spot.castShadow=lighting.spotEnabled&&lighting.shadows>0;spot.shadow.camera.fov=Math.min(170,lighting.beam*2);spot.shadow.camera.updateProjectionMatrix();
+  fixture.position.copy(spot.position);const aim=spot.target.position.clone();fixture.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),aim.sub(spot.position).normalize());
+  stand.position.set(spot.position.x,0,spot.position.z);const pole=stand.children[0];pole.scale.y=Math.max(.3,spot.position.y-1);pole.position.y=pole.scale.y/2;stand.children[2].position.y=Math.max(.3,spot.position.y-.15);
+  lightSources.helper.visible=lighting.spotEnabled&&lighting.intensityPercent>0;lightSources.helper.update();
+  for(const renderer of [stageRenderer,previewRenderer])if(renderer){renderer.toneMappingExposure=lighting.exposure;if(renderer.shadowMap)renderer.shadowMap.needsUpdate=true}
+  $('spotLightValue').textContent=`${Math.round(lighting.intensityPercent)}%`;
+  $('spotLightEnabled').checked=lighting.spotEnabled;
+  $('lightingTip').textContent=lighting.tip||lightingPresets.professional.tip;
+  document.querySelectorAll('[data-light-preset]').forEach(button=>{const selected=button.dataset.lightPreset===lighting.preset;button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected))});
+  document.querySelectorAll('[data-light-direction]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.lightDirection===lighting.direction)));
+  scheduleRender();
+}
+
+function selectLightingPreset(name){
+  const preset=lightingPresets[name];if(!preset)return;
+  Object.assign(lighting,preset,{preset:name});
+  $('spotLightIntensity').value=lighting.intensityPercent;$('spotLightEnabled').checked=lighting.spotEnabled;
+  applyLighting();
+}
+
+function makePlasterTextures(){
+  const canvas=document.createElement('canvas');canvas.width=512;canvas.height=512;
+  const context=canvas.getContext('2d');context.fillStyle='#eee7dc';context.fillRect(0,0,512,512);
+  let seed=42;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};
+  for(let i=0;i<22000;i++){
+    const value=random()>.5?'255,255,255':'139,126,108';
+    context.fillStyle=`rgba(${value},${random()*.045})`;
+    const size=random()*1.4+.2;context.fillRect(random()*512,random()*512,size,size);
+  }
+  const map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;map.anisotropy=4;
+  const bump=new THREE.CanvasTexture(canvas);bump.colorSpace=THREE.NoColorSpace;bump.anisotropy=4;
+  return {map,bump};
+}
+
+function makeWoodTextures(){
+  const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=1024;
+  const context=canvas.getContext('2d');context.fillStyle='#c7ac88';context.fillRect(0,0,1024,1024);
+  let seed=1847;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};
+  const colors=['#c8ae8e','#d1b998','#bea27f','#d5bea0','#c4a985','#cfb28d'];
+  const plankHeight=16;
+  for(let row=0;row<1024/plankHeight;row++){
+    let x=row%2?-100:0;
+    while(x<1024){
+      const width=100+Math.floor(random()*150);const left=Math.max(0,x);
+      context.fillStyle=colors[Math.floor(random()*colors.length)];context.fillRect(left,row*plankHeight,Math.min(width,1024-left),plankHeight-1);
+      context.strokeStyle='rgba(111,82,53,.18)';context.lineWidth=1;context.beginPath();context.moveTo(left,row*plankHeight+plankHeight-1);context.lineTo(Math.min(left+width,1024),row*plankHeight+plankHeight-1);context.stroke();
+      for(let grain=0;grain<3;grain++){
+        const gy=row*plankHeight+2+random()*(plankHeight-4);context.strokeStyle=`rgba(115,83,54,${.035+random()*.055})`;context.lineWidth=.6;context.beginPath();context.moveTo(left,gy);context.bezierCurveTo(left+width*.3,gy-1,left+width*.7,gy+1,Math.min(left+width,1024),gy);context.stroke();
+      }
+      const seamX=Math.min(x+width,1023);context.fillStyle='rgba(94,69,48,.25)';context.fillRect(seamX,row*plankHeight,1,plankHeight);x+=width;
+    }
+  }
+  const map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;map.anisotropy=4;
+  const bump=new THREE.CanvasTexture(canvas);bump.colorSpace=THREE.NoColorSpace;bump.anisotropy=4;
+  return {map,bump};
 }
 
 function makeScene() {
   scene = new THREE.Scene(); scene.background = new THREE.Color('#d8d8d0');
   scene.fog=new THREE.Fog('#d8d8d0',12,26);
   addLights();
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(80,80),new THREE.MeshStandardMaterial({color:'#d8d1c4',roughness:1}));
+  const wood=makeWoodTextures();
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(16,16),new THREE.MeshStandardMaterial({color:'#fffdf9',map:wood.map,bumpMap:wood.bump,bumpScale:.018,roughness:.82,metalness:0}));
   floor.rotation.x=-Math.PI/2;floor.position.y=-.06;floor.receiveShadow=true;scene.add(floor);
+  roomWalls=new THREE.Group();roomWalls.name='Paredes foscas do estúdio';
+  const plaster=makePlasterTextures();
+  const wallMaterial=new THREE.MeshStandardMaterial({color:'#fffdf9',map:plaster.map,bumpMap:plaster.bump,bumpScale:.012,roughness:.98,metalness:0,side:THREE.DoubleSide});
+  const wallSpecs=[
+    {x:0,z:-8,rotation:Math.PI},
+    {x:-8,z:0,rotation:-Math.PI/2},
+    {x:8,z:0,rotation:Math.PI/2},
+    {x:0,z:8,rotation:0}
+  ];
+  for(const spec of wallSpecs){const wall=new THREE.Mesh(new THREE.PlaneGeometry(16,8),wallMaterial);wall.position.set(spec.x,4,spec.z);wall.rotation.y=spec.rotation;wall.receiveShadow=true;wall.castShadow=true;wall.layers.set(2);roomWalls.add(wall)}
+  const trimMaterial=new THREE.MeshStandardMaterial({color:'#dfd2bf',roughness:.86,metalness:0});
+  for(const z of [-7.94,7.94]){const trim=new THREE.Mesh(new THREE.BoxGeometry(16,.16,.09),trimMaterial);trim.position.set(0,.02,z);trim.receiveShadow=true;trim.layers.set(2);roomWalls.add(trim)}
+  for(const x of [-7.94,7.94]){const trim=new THREE.Mesh(new THREE.BoxGeometry(.09,.16,16),trimMaterial);trim.position.set(x,.02,0);trim.receiveShadow=true;trim.layers.set(2);roomWalls.add(trim)}
+  scene.add(roomWalls);
   const pedestal=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.3,.13,80),new THREE.MeshStandardMaterial({color:'#e7dfd1',roughness:.85}));
   pedestal.position.y=.03;pedestal.receiveShadow=true;scene.add(pedestal);
-  const wall=new THREE.Mesh(new THREE.PlaneGeometry(13,7),new THREE.MeshStandardMaterial({color:'#dbe3df',roughness:1}));
-  wall.position.set(0,3,-5.5);wall.receiveShadow=true;scene.add(wall);
   productGroup=new THREE.Group();productGroup.position.y=.12;scene.add(productGroup);
   const ringMat=new THREE.MeshBasicMaterial({color:'#ad7b27',transparent:true,opacity:.55,depthWrite:false});
   ring=new THREE.Mesh(new THREE.RingGeometry(3.75,3.78,128),ringMat);
-  ring.rotation.x=-Math.PI/2;ring.position.y=.025;scene.add(ring);
+  ring.rotation.x=-Math.PI/2;ring.position.y=.025;ring.layers.set(1);scene.add(ring);
   phone=new THREE.Group();scene.add(phone);
-  const standLight=new THREE.Mesh(new THREE.PlaneGeometry(1.6,2.6),new THREE.MeshBasicMaterial({color:'#fff1ce',side:THREE.DoubleSide}));
-  standLight.position.set(-4,2.6,-.1);standLight.rotation.y=Math.PI/2.8;scene.add(standLight);
 }
 
 function setupRenderers() {
@@ -187,9 +273,18 @@ function setupRenderers() {
     renderer.shadowMap.type=THREE.PCFShadowMap;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,maxPixelRatio));
   }
+  maxTextureAnisotropy=Math.max(1,Math.min(8,stageRenderer.capabilities.getMaxAnisotropy()));
+  scene.traverse(object=>{
+    if(!object.material)return;
+    for(const material of (Array.isArray(object.material)?object.material:[object.material])){
+      for(const value of Object.values(material))if(value?.isTexture){value.anisotropy=maxTextureAnisotropy;value.needsUpdate=true}
+    }
+  });
   stageCamera=new THREE.PerspectiveCamera(39,1,.1,100);
-  stageCamera.position.set(4.5,4.9,8.6);stageCamera.lookAt(0,.85,0);
+  stageCamera.position.set(4.5,4.9,6.7);stageCamera.lookAt(0,.85,0);
+  stageCamera.layers.enable(1);stageCamera.layers.enable(2);
   phoneCamera=new THREE.PerspectiveCamera(78,1,.1,50);
+  phoneCamera.layers.enable(2);
 }
 
 function resizeRenderer(renderer,canvas,camera){
@@ -199,10 +294,7 @@ function resizeRenderer(renderer,canvas,camera){
 }
 
 function scheduleRender(){if(!renderPending){renderPending=true;requestAnimationFrame(render)}}
-function render(){
-  renderPending=false;
-  resizeRenderer(stageRenderer,stageCanvas,stageCamera);
-  resizeRenderer(previewRenderer,previewCanvas,phoneCamera);
+function updatePhoneCamera(){
   const angle=THREE.MathUtils.degToRad(state.angle);
   const x=Math.sin(angle)*state.distance,z=Math.cos(angle)*state.distance;
   const target=new THREE.Vector3(state.productId==='mug'?.12:0,state.productId==='shirt'?.54:state.productId==='shoe'?.72:.83,0);
@@ -210,9 +302,44 @@ function render(){
   phone.lookAt(target);
   phoneCamera.position.copy(phone.position);phoneCamera.lookAt(target);
   ring.scale.setScalar(state.distance/3.77);
-  phone.visible=false;previewRenderer.render(scene,phoneCamera);
-  phoneScreenTexture.needsUpdate=true;
-  phone.visible=true;stageRenderer.render(scene,stageCamera);
+}
+function render(){
+  renderPending=false;
+  resizeRenderer(stageRenderer,stageCanvas,stageCamera);
+  resizeRenderer(previewRenderer,previewCanvas,phoneCamera);
+  updatePhoneCamera();
+  const wasVisible=phone.visible;
+  try{phone.visible=false;previewRenderer.render(scene,phoneCamera);phoneScreenTexture.needsUpdate=true}
+  finally{phone.visible=wasVisible}
+  stageRenderer.render(scene,stageCamera);
+}
+
+async function capturePhotoBlob(){
+  render();
+  const width=Math.max(1,previewCanvas.clientWidth),height=Math.max(1,previewCanvas.clientHeight);
+  const originalRatio=previewRenderer.getPixelRatio(),originalAspect=phoneCamera.aspect,wasPhoneVisible=phone.visible;
+  const gl=previewRenderer.getContext();
+  const maxViewport=gl.getParameter(gl.MAX_VIEWPORT_DIMS);
+  const maxDimension=Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE),gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),maxViewport[0],maxViewport[1],4096);
+  const pixelBudget=8_000_000;
+  const scale=Math.max(1,Math.min(4,maxDimension/width,maxDimension/height,Math.sqrt(pixelBudget/(width*height))));
+  const outputWidth=Math.max(width,Math.floor(width*scale)),outputHeight=Math.max(height,Math.floor(height*scale));
+  try{
+    previewRenderer.setPixelRatio(1);
+    previewRenderer.setSize(outputWidth,outputHeight,false);
+    phoneCamera.aspect=outputWidth/outputHeight;phoneCamera.updateProjectionMatrix();
+    phone.visible=false;
+    previewRenderer.render(scene,phoneCamera);
+    phoneScreenTexture.needsUpdate=true;
+    return await new Promise((resolve,reject)=>previewCanvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Falha ao criar imagem')),'image/png'));
+  }finally{
+    phone.visible=wasPhoneVisible;
+    previewRenderer.setPixelRatio(originalRatio);
+    previewRenderer.setSize(width,height,false);
+    phoneCamera.aspect=originalAspect;phoneCamera.updateProjectionMatrix();
+    phoneScreenTexture.needsUpdate=true;
+    render();
+  }
 }
 
 function updateFeedback(){
@@ -283,6 +410,12 @@ async function loadCaptures(){
 
 function bindControls(){
   document.querySelectorAll('[data-preset]').forEach(button=>button.addEventListener('click',()=>{Object.assign(state,presets[button.dataset.preset]);syncControls()}));
+  document.querySelectorAll('[data-light-preset]').forEach(button=>button.addEventListener('click',()=>selectLightingPreset(button.dataset.lightPreset)));
+  const setCustomTip=()=>{lighting.preset='custom';lighting.tip='Ajuste a luz e observe como ela muda as cores e as sombras do produto.'};
+  $('spotLightIntensity').addEventListener('input',()=>{lighting.intensityPercent=Number($('spotLightIntensity').value);setCustomTip();applyLighting()});
+  $('spotLightEnabled').addEventListener('change',()=>{lighting.spotEnabled=$('spotLightEnabled').checked;setCustomTip();applyLighting()});
+  document.querySelectorAll('[data-light-direction]').forEach(button=>button.addEventListener('click',()=>{lighting.direction=button.dataset.lightDirection;setCustomTip();applyLighting()}));
+  $('lightingReset').addEventListener('click',()=>selectLightingPreset('natural'));
   $('angle').addEventListener('input',e=>{state.angle=Number(e.target.value);syncControls()});
   $('height').addEventListener('input',e=>{state.height=Number(e.target.value)/10;syncControls()});
   $('distance').addEventListener('input',e=>{state.distance=Number(e.target.value)/10;syncControls()});
@@ -312,11 +445,10 @@ async function capture(){
   if(totalCaptureCount>=MAX_CAPTURES){renderCaptures();return}
   button.disabled=true;
   try{
-    render();
-    const blob=await new Promise((resolve,reject)=>previewCanvas.toBlob(value=>value?resolve(value):reject(new Error('Falha ao criar imagem')),'image/png'));
+    const blob=await capturePhotoBlob();
     const stamp=new Date().toISOString().replace(/[:.]/g,'-');
     const slug={mug:'caneca',shoe:'tenis',shirt:'camisas'}[state.productId];
-    const record=await window.MetaLabGallery.save({blob,name:`metalab-${slug}-${stamp}.png`,product:state.product,angle:Math.round(state.angle),height:Math.round(state.height*10)});
+    const record=await window.MetaLabGallery.save({blob,name:`metalab-${slug}-${stamp}.png`,product:state.product,angle:Math.round(state.angle),height:Math.round(state.height*10),lighting:{preset:lighting.preset,keyIntensity:lighting.key,ambientIntensity:lighting.ambient,direction:lighting.direction,temperature:lighting.temperature,shadowStrength:lighting.shadows}});
     lastSavedPhoto=record;
     const src=URL.createObjectURL(blob);captures.unshift({id:record.id,src,angle:record.angle,height:record.height});
     totalCaptureCount++;
@@ -333,7 +465,7 @@ async function capture(){
 }
 
 try{
-  makeScene();setupRenderers();bindControls();syncControls();loadPhoneModel();
+  makeScene();setupRenderers();bindControls();selectLightingPreset('natural');syncControls();loadPhoneModel();
   window.addEventListener('metalab-gallery-updated',()=>{void loadCaptures()});
   void loadCaptures();
   void selectProduct('mug');

@@ -67,22 +67,54 @@ function signature(payload: string, secret: string) {
   return createHmac('sha256', secret).update(payload).digest('hex');
 }
 
-export function createTeacherSession() {
+export function createTeacherSession(cpfInput: string) {
   const config = configuration();
   if (!config) throw new Error('TEACHER_AUTH_NOT_CONFIGURED');
+  const cpf = digits(cpfInput);
+  if (!config.accounts.some(account => equalText(cpf, account.cpf))) throw new Error('TEACHER_ACCOUNT_NOT_CONFIGURED');
   const expires = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
-  const payload = `${expires}.${randomBytes(32).toString('base64url')}`;
+  const payload = `${expires}.${randomBytes(32).toString('base64url')}.${cpf}`;
   return `${payload}.${signature(payload, config.secret)}`;
+}
+
+export function teacherSessionCpf(request: NextRequest) {
+  const config = configuration();
+  const token = request.cookies.get(TEACHER_COOKIE)?.value || '';
+  if (!config) return null;
+  const parts = token.split('.');
+  const modern = parts.length === 4 && /^[0-9]{10}\.[A-Za-z0-9_-]{43}\.[0-9]{11}\.[a-f0-9]{64}$/u.test(token);
+  const legacy = parts.length === 3 && /^[0-9]{10}\.[A-Za-z0-9_-]{43}\.[a-f0-9]{64}$/u.test(token);
+  if (!modern && !legacy) return null;
+  const [expires, nonce, maybeCpf, maybeSignature] = modern ? parts : [parts[0], parts[1], undefined, parts[2]];
+  const supplied = maybeSignature;
+  if (!nonce || !supplied || Number(expires) <= Math.floor(Date.now() / 1000)) return null;
+  const payload = modern ? `${expires}.${nonce}.${maybeCpf}` : `${expires}.${nonce}`;
+  const expected = signature(payload, config.secret);
+  if (!timingSafeEqual(Buffer.from(supplied, 'hex'), Buffer.from(expected, 'hex'))) return null;
+  return modern && maybeCpf && config.accounts.some(account => equalText(account.cpf, maybeCpf)) ? maybeCpf : null;
 }
 
 export function hasTeacherSession(request: NextRequest) {
   const config = configuration();
   const token = request.cookies.get(TEACHER_COOKIE)?.value || '';
-  if (!config || !/^[0-9]{10}\.[A-Za-z0-9_-]{43}\.[a-f0-9]{64}$/u.test(token)) return false;
-  const [expires, nonce, supplied] = token.split('.');
+  if (!config) return false;
+  const parts = token.split('.');
+  const modern = parts.length === 4 && /^[0-9]{10}\.[A-Za-z0-9_-]{43}\.[0-9]{11}\.[a-f0-9]{64}$/u.test(token);
+  const legacy = parts.length === 3 && /^[0-9]{10}\.[A-Za-z0-9_-]{43}\.[a-f0-9]{64}$/u.test(token);
+  if (!modern && !legacy) return false;
+  const [expires, nonce, maybeCpf, maybeSignature] = modern ? parts : [parts[0], parts[1], undefined, parts[2]];
+  const supplied = maybeSignature;
   if (!nonce || !supplied || Number(expires) <= Math.floor(Date.now() / 1000)) return false;
-  const expected = signature(`${expires}.${nonce}`, config.secret);
-  return timingSafeEqual(Buffer.from(supplied, 'hex'), Buffer.from(expected, 'hex'));
+  const payload = modern ? `${expires}.${nonce}.${maybeCpf}` : `${expires}.${nonce}`;
+  const expected = signature(payload, config.secret);
+  if (!timingSafeEqual(Buffer.from(supplied, 'hex'), Buffer.from(expected, 'hex'))) return false;
+  return !modern || Boolean(maybeCpf && config.accounts.some(account => equalText(account.cpf, maybeCpf)));
+}
+
+export function isInstalabEconomyAdmin(request: NextRequest) {
+  const sessionCpf = teacherSessionCpf(request);
+  const adminCpf = digits(process.env.METALAB_INSTALAB_ECONOMY_ADMIN_CPF || '');
+  return Boolean(sessionCpf && adminCpf && equalText(sessionCpf, adminCpf));
 }
 
 export function setTeacherCookie(response: NextResponse, token: string) {

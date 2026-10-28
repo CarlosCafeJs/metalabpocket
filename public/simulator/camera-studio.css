@@ -52,3 +52,91 @@ body{min-height:100vh}.site-header{position:sticky;top:0;z-index:20;height:42px;
 .capture-sync-status.is-synced{color:#2e7750}
 .capture-retry{display:block;margin:3px auto 0;padding:2px 4px;border:1px solid #e5dfd3;border-radius:6px;background:#fffdf9;color:#152b49;font-size:8px;font-weight:750}
 .capture-retry:disabled{opacity:.55;cursor:wait}
+.lighting-panel{margin:14px 0;padding:16px;border:1px solid var(--ml-line);border-radius:16px;background:var(--ml-surface);box-shadow:0 8px 24px #14244008}
+.lighting-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.lighting-heading h2{margin:3px 0 0;font-size:19px;color:var(--ml-ink)}
+.lighting-reset{border:1px solid var(--ml-line);border-radius:18px;background:var(--ml-surface);color:var(--ml-ink);padding:8px 11px;font-size:10px;font-weight:800;cursor:pointer}
+.lighting-presets{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}.lighting-presets button{border:1px solid var(--ml-line);border-radius:18px;background:var(--ml-surface-secondary);color:var(--ml-ink);padding:8px 10px;font-size:10px;font-weight:750;cursor:pointer}.lighting-presets button.active{background:var(--ml-ink);border-color:var(--ml-ink);color:#fff}
+.lighting-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.lighting-controls label{display:grid;gap:5px;color:var(--ml-ink);font-size:10px;font-weight:750}.lighting-controls output{justify-self:end;margin-bottom:-21px;color:var(--ml-accent);font-size:10px}.lighting-controls input{width:100%;accent-color:var(--ml-accent)}.lighting-controls select{min-height:36px;border:1px solid var(--ml-line);border-radius:9px;background:#fffdf9;color:var(--ml-ink);padding:6px 9px;font:inherit}
+.lighting-tip{margin:12px 0 0;padding:10px 12px;border-radius:10px;background:var(--ml-accent-soft);color:var(--ml-muted);font-size:11px;line-height:1.5}
+.lighting-controls .lighting-toggle{display:flex;align-items:center;align-self:end;gap:9px;min-height:38px;padding:8px 10px;border:1px solid var(--ml-line);border-radius:10px;background:var(--ml-surface-secondary);font-size:11px}
+.lighting-controls .lighting-toggle input{width:17px;height:17px;flex:0 0 17px;margin:0;accent-color:var(--ml-accent)}
+@media(max-width:650px){.lighting-controls{grid-template-columns:1fr 1fr}.lighting-heading{align-items:flex-start}}
+.lighting-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}
+.lighting-presets button{min-height:42px;padding:9px 8px;font-size:11px}
+.lighting-controls{grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);align-items:center;gap:12px 16px}
+.lighting-controls .lighting-toggle{align-self:center;min-height:44px}
+.lighting-controls .simple-intensity{align-self:center}
+.lighting-controls .simple-intensity output{margin-bottom:-20px}
+.lighting-controls .simple-intensity input{margin-top:9px}
+.light-direction{grid-column:1/-1;min-width:0;margin:0;padding:0;border:0}
+.light-direction legend{margin-bottom:7px;color:var(--ml-ink);font-size:10px;font-weight:800}
+.light-direction [role=group]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.light-direction button{min-height:38px;border:1px solid var(--ml-line);border-radius:10px;background:var(--ml-surface-secondary);color:var(--ml-ink);font-size:11px;font-weight:750;cursor:pointer}
+.light-direction button[aria-pressed=true]{border-color:var(--ml-accent);background:var(--ml-accent-soft);box-shadow:inset 0 0 0 1px var(--ml-accent)}
+.lighting-panel button:focus-visible,.lighting-panel input:focus-visible{outline:3px solid color-mix(in srgb,var(--ml-accent) 55%,white);outline-offset:2px}
+.lighting-note{margin:8px 0 0;color:var(--ml-muted);font-size:10px;line-height:1.45}
+@media(max-width:650px){.lighting-controls{grid-template-columns:1fr 1fr}.lighting-presets{grid-template-columns:repeat(2,minmax(0,1fr))}.lighting-controls .lighting-toggle,.lighting-controls .simple-intensity{min-width:0}.lighting-heading h2{font-size:17px}}
+
+/* Clearer controls and a lightweight CSS phone shell. The Three.js phone in
+   the scene remains responsible for camera position and photographic framing. */
+.advanced-settings{margin-top:14px;border:1px solid var(--ml-line);border-radius:14px;background:var(--ml-surface);overflow:hidden}
+.advanced-settings>summary{min-height:52px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--ml-ink);font-size:14px;font-weight:850;cursor:pointer;list-style:none}
+.advanced-settings>summary::-webkit-details-marker{display:none}
+.advanced-settings>summary::after{content:"+";display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:50%;background:var(--ml-accent-soft);color:var(--ml-ink);font-size:20px}
+.advanced-settings[open]>summary::after{content:"−"}
+.advanced-settings>summary span{margin-left:auto;color:var(--ml-muted);font-size:11px;font-weight:600;text-align:right}
+.advanced-settings>summary:focus-visible{outline:3px solid var(--ml-accent-bright);outline-offset:-3px}
+.advanced-settings-body{padding:0 14px 14px;border-top:1px solid var(--ml-line)}
+.advanced-settings .control-grid{padding:14px 2px 0;gap:18px}
+.advanced-settings .control-grid label{font-size:13px;line-height:1.4}
+.advanced-settings .control-grid input{min-height:30px}
+.quick-angles{gap:8px}
+.quick-angles button{min-height:44px;padding:9px 16px;font-size:13px}
+.quick-zoom{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 12px;margin:12px 0 16px;padding:12px 14px;border:1px solid var(--ml-line);border-radius:13px;background:var(--ml-surface);color:var(--ml-ink);font-size:13px;font-weight:800}
+.quick-zoom output{color:var(--ml-accent);font-weight:850}
+.quick-zoom input{grid-column:1/-1;width:100%;min-height:30px;margin:0;accent-color:var(--ml-accent);cursor:pointer}
+.lighting-quick>.step{display:block;margin-bottom:7px}
+.lighting-quick .lighting-presets{grid-template-columns:repeat(4,minmax(0,1fr));margin:0 0 14px}
+.lighting-quick .lighting-presets button{min-height:44px;padding:9px 8px;font-size:13px}
+.preview-column{min-width:0}
+.device{width:min(100%,350px);height:auto;aspect-ratio:350/700;display:flex;align-items:stretch;padding:11px;border:1px solid #6e8093;border-radius:48px;background:linear-gradient(135deg,#8293a3 0%,#182b43 9%,#09182a 50%,#55687d 93%,#162943 100%);box-shadow:0 18px 38px #14244035,inset 0 0 0 3px #091629;color:#fff}
+.device::before{content:"";position:absolute;left:-4px;top:23%;width:4px;height:64px;border-radius:4px 0 0 4px;background:#63758a;box-shadow:0 78px #63758a}
+.device-interface{position:relative;inset:auto;width:100%;height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden;border:1px solid #334c69;border-radius:36px;background:var(--ml-phone-dark,#111e31)}
+.device-top{height:42px;flex:0 0 42px;padding:0 16px;font-size:12px;letter-spacing:.02em}
+.viewfinder{flex:1;min-height:0;aspect-ratio:auto;background:#9eaca8}
+.viewfinder canvas{width:100%;height:100%;object-fit:contain}
+.preview-badge{left:12px;bottom:12px;padding:7px 10px;font-size:10px}
+.device-bottom{height:90px;flex:0 0 90px;justify-content:center;overflow:visible}
+.device-bottom .shutter{width:140px;height:84px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border:0;border-radius:18px;background:transparent;box-shadow:none;color:#fff;transition:background-color .15s ease}
+.device-bottom .shutter::before{content:"";display:block;width:52px;height:52px;border:4px solid #f8f8f4;border-radius:50%;background:var(--ml-accent-bright);box-shadow:0 0 0 2px #64778e}
+.device-bottom .shutter-label{font-size:12px;line-height:1;font-weight:850;color:#fff}
+.device-bottom .shutter:hover{background:#ffffff12;transform:none}
+.device-bottom .shutter:active{transform:scale(.97)}
+.device-bottom .shutter:disabled{opacity:.5;filter:grayscale(.6)}
+.device-bottom .shutter:focus-visible{outline:3px solid var(--ml-accent-bright);outline-offset:-1px}
+.gesture-bar{flex:0 0 4px;width:76px;margin:0 auto 10px}
+.capture-head h3{font-size:16px}
+.capture-head span{font-size:13px}
+.capture-list{gap:12px}
+.capture-thumb{flex-basis:72px}
+.capture-list img{width:72px;height:96px;border-radius:10px}
+.capture-delete{top:-8px;right:-8px;width:28px;height:28px;font-size:19px}
+.capture-sync-status{font-size:10px}
+.capture-retry{min-height:34px;padding:5px 8px;font-size:10px}
+@media(max-width:1000px){.device{width:min(100%,350px);grid-row:2/4}}
+@media(max-width:650px){
+  .advanced-settings>summary{min-height:56px;padding:12px;font-size:13px}
+  .advanced-settings>summary span{max-width:48%;font-size:10px}
+  .advanced-settings-body{padding:0 10px 10px}
+  .advanced-settings .control-grid{grid-template-columns:1fr;gap:13px}
+  .quick-angles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .quick-angles button{min-height:46px;padding:9px 7px;font-size:12px}
+  .quick-zoom{min-height:62px;font-size:13px}
+  .lighting-quick .lighting-presets{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .preview-column{align-items:stretch}
+  .device{width:min(100%,350px);align-self:center;aspect-ratio:350/700}
+  .device-top{height:38px;flex-basis:38px;font-size:12px}
+  .device-bottom{height:86px;flex-basis:86px}
+  .capture-list img{width:76px;height:100px}
+}
+@media(max-width:380px){.device{width:min(100%,320px);border-radius:42px;padding:9px}.device-interface{border-radius:32px}.device-top{height:34px;flex-basis:34px}.device-bottom{height:80px;flex-basis:80px}.device-bottom .shutter{height:76px}.device-bottom .shutter::before{width:46px;height:46px}.quick-angles{grid-template-columns:repeat(2,minmax(0,1fr))}}

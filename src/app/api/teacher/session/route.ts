@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
     failures.delete(key);
     const response = json({ authenticated: true });
-    setTeacherCookie(response, createTeacherSession());
+    setTeacherCookie(response, createTeacherSession(parsed.data.cpf));
     return response;
   } catch (error) {
     if (error instanceof Response) return new Response(error.body, { status: error.status, headers: error.headers });

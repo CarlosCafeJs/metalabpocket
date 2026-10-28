@@ -20,10 +20,10 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const input = z.object({ body: z.string().trim().min(1).max(1000) }).strict().parse(await readJson(request, 2048));
     if (containsPotentialSensitiveData(input.body)) return NextResponse.json({ error: 'Remova links, e-mails, telefones, senhas ou códigos pessoais do comentário.' }, { status: 422, headers: noStore });
-    const id = await createInstalabComment(postId, student.id, input.body);
-    if (!id) return NextResponse.json({ error: 'Publicação não encontrada na sua turma.' }, { status: 404, headers: noStore });
+    const result = await createInstalabComment(postId, student.id, input.body);
+    if (!result) return NextResponse.json({ error: 'Publicação não encontrada na sua turma.' }, { status: 404, headers: noStore });
     const post = (await listStudentInstalabPosts(student.id)).find(item => item.id === postId);
-    return NextResponse.json({ comments: post?.comments ?? [] }, { status: 201, headers: noStore });
+    return NextResponse.json({ comments: post?.comments ?? [], reward: result.reward, balance: result.balance, duplicate: result.duplicate }, { status: result.duplicate ? 200 : 201, headers: noStore });
   } catch (error) {
     if (error instanceof Response) return error;
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'Escreva um comentário de até 1.000 caracteres.' }, { status: 400, headers: noStore });

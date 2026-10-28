@@ -67,6 +67,17 @@ export async function POST(request: NextRequest) {
     const angle = Number(request.headers.get('x-metalab-angle') || 0);
     const height = Number(request.headers.get('x-metalab-height') || 0);
     if (!Number.isFinite(angle) || !Number.isFinite(height)) return json({ error: 'Dados da foto inválidos.' }, 400);
+    let lightingSettings: Record<string, unknown> = {};
+    try {
+      const rawLighting = decodeURIComponent(request.headers.get('x-metalab-lighting') || '%7B%7D');
+      if (rawLighting.length > 512) return json({ error: 'Configuração de iluminação inválida.' }, 400);
+      const value = JSON.parse(rawLighting) as Record<string, unknown>;
+      if (!Object.keys(value).length) Object.assign(value, { preset:'professional',direction:'front',temperature:'neutral',keyIntensity:3.1,ambientIntensity:2.2,shadowStrength:.55 });
+      const directions = new Set(['left','right','front','back','top','custom']);
+      const temperatures = new Set(['warm','neutral','cold']);
+      if (typeof value.preset !== 'string' || value.preset.length > 30 || !directions.has(String(value.direction)) || !temperatures.has(String(value.temperature)) || !['keyIntensity','ambientIntensity','shadowStrength'].every(key => typeof value[key] === 'number' && Number.isFinite(value[key]))) return json({ error: 'Configuração de iluminação inválida.' }, 400);
+      lightingSettings = { preset: value.preset, direction: value.direction, temperature: value.temperature, keyIntensity: Math.max(0,Math.min(5,Number(value.keyIntensity))), ambientIntensity: Math.max(0,Math.min(3.5,Number(value.ambientIntensity))), shadowStrength: Math.max(0,Math.min(1,Number(value.shadowStrength))) };
+    } catch { return json({ error: 'Configuração de iluminação inválida.' }, 400); }
 
     const id = await saveStudentPhoto({
       studentId: student.id,
@@ -75,6 +86,7 @@ export async function POST(request: NextRequest) {
       product,
       angle: Math.max(-360, Math.min(360, Math.round(angle))),
       height: Math.max(0, Math.min(1000, Math.round(height))),
+      lightingSettings,
       mimeType,
       imageData
     });

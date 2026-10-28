@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createInstalabPost, findEnrolledStudentBySessionToken, getStudentBusinessAndClass, listStudentInstalabPosts } from '@/server/repository';
+import { countStudentInstalabPosts, createInstalabPost, findEnrolledStudentBySessionToken, getStudentBusinessAndClass, getStudentInstalabSponsoredAd, listStudentInstalabPosts } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { sameOrigin } from '@/server/validation';
 import { containsPotentialSensitiveData } from '@/domain/mission-evaluation';
+import { z } from 'zod';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const noStore = { 'Cache-Control': 'no-store' };
 const maxImageBytes = 4 * 1024 * 1024;
+const defaultPageSize = 12;
 const allowedImages = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const feedQuery = z.object({ limit: z.coerce.number().int().min(1).max(30).default(12), offset: z.coerce.number().int().min(0).max(100000).default(0), scope: z.enum(['class', 'mine']).default('class') });
 
 async function currentStudent(request: NextRequest) {
   const token = readSessionToken(request);
@@ -25,12 +28,20 @@ function isValidImage(mime: string, bytes: Buffer) {
 export async function GET(request: NextRequest) {
   const student = await currentStudent(request);
   if (!student) return NextResponse.json({ error: 'Sua sessão expirou.' }, { status: 401, headers: noStore });
+  const parsed = feedQuery.safeParse(Object.fromEntries(request.nextUrl.searchParams));
+  if (!parsed.success) return NextResponse.json({ error: 'Parâmetros de paginação inválidos.' }, { status: 400, headers: noStore });
   try {
     const context = await getStudentBusinessAndClass(student.id);
-    if (!context?.classId) return NextResponse.json({ class: null, business: Boolean(context?.businessId), posts: [] }, { headers: noStore });
-    if (!context.businessId) return NextResponse.json({ class: { id: context.classId, name: context.className }, business: false, posts: [] }, { headers: noStore });
-    const posts = await listStudentInstalabPosts(student.id);
-    return NextResponse.json({ class: { id: context.classId, name: context.className }, business: true, posts }, { headers: noStore });
+    if (!context?.classId) return NextResponse.json({ studentId: student.id, studentName: context?.studentFullName ?? student.displayName, businessName: context?.businessName ?? null, businessSegment: context?.businessSegment ?? null, businessDescription: context?.businessDescription ?? null, hasAvatar: context?.hasAvatar ?? false, class: null, business: Boolean(context?.businessId), posts: [], sponsored: null, total: 0, hasMore: false }, { headers: noStore });
+    if (!context.businessId) return NextResponse.json({ studentId: student.id, studentName: context.studentFullName, businessName: null, businessSegment: null, businessDescription: null, hasAvatar: context.hasAvatar, class: { id: context.classId, name: context.className }, business: false, posts: [], sponsored: null, total: 0, hasMore: false }, { headers: noStore });
+    const { limit, offset, scope } = parsed.data;
+    const mineOnly = scope === 'mine';
+    const [posts, total] = await Promise.all([
+      listStudentInstalabPosts(student.id, limit, offset, mineOnly),
+      countStudentInstalabPosts(student.id, mineOnly),
+    ]);
+    const sponsored = !mineOnly && offset === 0 ? await getStudentInstalabSponsoredAd(student.id) : null;
+    return NextResponse.json({ studentId: student.id, studentName: context.studentFullName, businessName: context.businessName, businessSegment: context.businessSegment, businessDescription: context.businessDescription, hasAvatar: context.hasAvatar, class: { id: context.classId, name: context.className }, business: true, posts, sponsored, total, hasMore: offset + posts.length < total }, { headers: noStore });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';
     console.error(`student.instalab.read failed (${code})`);
@@ -44,6 +55,8 @@ export async function POST(request: NextRequest) {
   if (length > maxImageBytes + 32 * 1024) return NextResponse.json({ error: 'A imagem deve ter no máximo 4 MB.' }, { status: 413, headers: noStore });
   const student = await currentStudent(request);
   if (!student) return NextResponse.json({ error: 'Sua sessão expirou.' }, { status: 401, headers: noStore });
+  const requestId = request.headers.get('idempotency-key') || '';
+  if (!z.string().uuid().safeParse(requestId).success) return NextResponse.json({ error: 'Identificador da publicação inválido. Atualize a página e tente novamente.' }, { status: 400, headers: noStore });
   try {
     const context = await getStudentBusinessAndClass(student.id);
     if (!context?.businessId) return NextResponse.json({ error: 'Crie e salve sua empresa antes de publicar no InstaLab.' }, { status: 409, headers: noStore });
@@ -63,10 +76,13 @@ export async function POST(request: NextRequest) {
       body,
       imageName: file ? file.name.replace(/[\\/\u0000-\u001f]/gu, '_').slice(0, 255) : null,
       imageMimeType: file?.type || null,
-      imageData
+      imageData,
+      requestId
     });
     if (!id) return NextResponse.json({ error: 'Não foi possível associar a publicação à sua turma e empresa.' }, { status: 409, headers: noStore });
-    return NextResponse.json({ id, posts: await listStudentInstalabPosts(student.id) }, { status: 201, headers: noStore });
+    const { id: postId, reward, balance, duplicate } = id;
+    const [posts, total] = await Promise.all([listStudentInstalabPosts(student.id, defaultPageSize, 0), countStudentInstalabPosts(student.id)]);
+    return NextResponse.json({ id: postId, posts, total, hasMore: posts.length < total, reward, balance, duplicate }, { status: duplicate ? 200 : 201, headers: noStore });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';
     console.error(`student.instalab.create failed (${code})`);

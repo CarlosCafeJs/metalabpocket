@@ -1,5 +1,6 @@
 import 'server-only';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { rewardForEligibleInteraction, rewardForValidPost } from '@/domain/instalab-economy';
 import { getPool, transaction } from '@/server/db';
 import { createSessionMaterial, hashSessionToken, isSessionToken } from '@/server/session';
 
@@ -32,9 +33,9 @@ export type TeacherStudentSummary = {
 
 export type TeacherClass = { id: string; name: string; joinCode: string; studentCount: number };
 export type StudentClass = { id: string; name: string; joinCode: string };
-export type InstalabComment = { id: string; studentId: string | null; authorName: string; authorRole: 'student' | 'teacher'; body: string; createdAt: string };
+export type InstalabComment = { id: string; studentId: string | null; authorName: string; authorBusinessName: string | null; hasAvatar: boolean; authorRole: 'student' | 'teacher'; body: string; createdAt: string };
 export type InstalabPost = {
-  id: string; studentId: string; authorName: string; businessName: string; classId: string; className?: string; body: string;
+  id: string; studentId: string; authorName: string; businessName: string; businessSegment: string; businessDescription: string; hasAvatar: boolean; classId: string; className?: string; body: string;
   imageName: string | null; imageMimeType: string | null; imageSizeBytes: number | null;
   createdAt: string; likeCount: number; likedByMe: boolean; isMine: boolean; comments: InstalabComment[];
 };
@@ -47,6 +48,7 @@ export type StudentPhotoSummary = {
   height: number;
   mimeType: string;
   sizeBytes: number;
+  lightingSettings: Record<string, unknown>;
   createdAt: string;
 };
 
@@ -654,9 +656,14 @@ export async function createTeacherClass(name:string) {
 }
 
 export async function assignStudentToClass(studentId:string,classId:string|null) {
-  if(classId===null){await getPool().query(`DELETE FROM metalab_student_class_assignments WHERE student_id=$1`,[studentId]);return true;}
-  const result=await getPool().query(`INSERT INTO metalab_student_class_assignments (student_id,class_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM metalab_students WHERE id=$1 AND archived_at IS NULL) AND EXISTS(SELECT 1 FROM metalab_classes WHERE id=$2) ON CONFLICT(student_id) DO UPDATE SET class_id=EXCLUDED.class_id,assigned_at=NOW() RETURNING student_id`,[studentId,classId]);
-  return Boolean(result.rowCount);
+  return transaction(async client=>{
+    const current=await client.query<{class_id:string}>('SELECT class_id FROM metalab_student_class_assignments WHERE student_id=$1',[studentId]);
+    if((current.rows[0]?.class_id??null)===classId)return true;
+    await client.query("SELECT set_config('metalab.actor_role','teacher',true)");
+    if(classId===null){await client.query(`DELETE FROM metalab_student_class_assignments WHERE student_id=$1`,[studentId]);return true;}
+    const result=await client.query(`INSERT INTO metalab_student_class_assignments (student_id,class_id) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM metalab_students WHERE id=$1 AND archived_at IS NULL) AND EXISTS(SELECT 1 FROM metalab_classes WHERE id=$2) ON CONFLICT(student_id) DO UPDATE SET class_id=EXCLUDED.class_id,assigned_at=NOW() RETURNING student_id`,[studentId,classId]);
+    return Boolean(result.rowCount);
+  });
 }
 
 export async function getStudentClass(studentId: string): Promise<StudentClass | null> {
@@ -685,11 +692,14 @@ export async function listStudentClassmates(studentId: string) {
 
 export async function joinStudentClassByCode(studentId: string, joinCode: string): Promise<StudentClass | null> {
   return transaction(async client => {
+    await client.query("SELECT set_config('metalab.actor_role','student',true)");
     const result = await client.query<{ id: string; name: string; join_code: string }>(`
       SELECT id, name, join_code FROM metalab_classes WHERE join_code = $1 FOR SHARE
     `, [joinCode.trim().toUpperCase()]);
     const row = result.rows[0];
     if (!row) return null;
+    const current=await client.query<{class_id:string}>('SELECT class_id FROM metalab_student_class_assignments WHERE student_id=$1',[studentId]);
+    if(current.rows[0]?.class_id===row.id)return { id: row.id, name: row.name, joinCode: row.join_code };
     await client.query(`
       INSERT INTO metalab_student_class_assignments (student_id, class_id)
       VALUES ($1, $2)
@@ -700,24 +710,29 @@ export async function joinStudentClassByCode(studentId: string, joinCode: string
 }
 
 export async function getStudentBusinessAndClass(studentId: string) {
-  const result = await getPool().query<{ class_id: string | null; class_name: string | null; business_id: string | null; business_name: string | null }>(`
-    SELECT class.id AS class_id, class.name AS class_name, business.id AS business_id, business.name AS business_name
+  const result = await getPool().query<{ student_full_name: string; class_id: string | null; class_name: string | null; business_id: string | null; business_name: string | null; business_segment: string | null; business_description: string | null; has_avatar: boolean }>(`
+    SELECT student.full_name AS student_full_name, class.id AS class_id, class.name AS class_name, business.id AS business_id, business.name AS business_name,
+      business.segment AS business_segment, business.description AS business_description,
+      student.instalab_avatar_data IS NOT NULL AS has_avatar
     FROM (SELECT $1::uuid AS student_id) current_student
+    JOIN metalab_students student ON student.id = current_student.student_id
     LEFT JOIN metalab_student_class_assignments assignment ON assignment.student_id = current_student.student_id
     LEFT JOIN metalab_classes class ON class.id = assignment.class_id
     LEFT JOIN metalab_businesses business ON business.student_id = current_student.student_id
   `, [studentId]);
   const row = result.rows[0];
-  return row ? { classId: row.class_id, className: row.class_name, businessId: row.business_id, businessName: row.business_name } : null;
+  return row ? { studentFullName: row.student_full_name, classId: row.class_id, className: row.class_name, businessId: row.business_id, businessName: row.business_name, businessSegment: row.business_segment, businessDescription: row.business_description, hasAvatar: row.has_avatar } : null;
 }
 
-async function listInstalabPosts(studentId: string, authorOnly = false, teacherView = false): Promise<InstalabPost[]> {
+async function listInstalabPosts(studentId: string, authorOnly = false, teacherView = false, limit = 100, offset = 0): Promise<InstalabPost[]> {
   const result = await getPool().query<{
-    id: string; student_id: string; class_id: string; author_name: string; business_name: string; class_name: string; body: string;
+    id: string; student_id: string; class_id: string; author_name: string; business_name: string; business_segment: string; business_description: string; has_avatar: boolean; class_name: string; body: string;
     image_name: string | null; image_mime_type: string | null; image_size_bytes: number | null;
     created_at: Date | string; like_count: number | string; liked_by_me: boolean; comments: InstalabComment[] | null;
   }>(`
-    SELECT post.id, post.student_id, post.class_id, student.full_name AS author_name, business.name AS business_name, class.name AS class_name,
+    SELECT post.id, post.student_id, post.class_id, student.full_name AS author_name, business.name AS business_name,
+      business.segment AS business_segment, business.description AS business_description,
+      student.instalab_avatar_data IS NOT NULL AS has_avatar, class.name AS class_name,
       post.body, post.image_name, post.image_mime_type, post.image_size_bytes, post.created_at,
       (SELECT COUNT(*) FROM metalab_instalab_likes likes WHERE likes.post_id = post.id) AS like_count,
       CASE WHEN $3::boolean
@@ -727,10 +742,12 @@ async function listInstalabPosts(studentId: string, authorOnly = false, teacherV
       COALESCE((
         SELECT json_agg(comment_row ORDER BY comment_row."createdAt" ASC)
         FROM (
-          SELECT comment.id, comment.student_id AS "studentId", COALESCE(comment.author_name, commenter.full_name) AS "authorName",
+          SELECT comment.id, comment.student_id AS "studentId", COALESCE(commenter.full_name, comment.author_name) AS "authorName",
+            commenter_business.name AS "authorBusinessName", COALESCE(commenter.instalab_avatar_data IS NOT NULL, FALSE) AS "hasAvatar",
             comment.author_role AS "authorRole", comment.body, comment.created_at AS "createdAt"
           FROM metalab_instalab_comments comment
           LEFT JOIN metalab_students commenter ON commenter.id = comment.student_id
+          LEFT JOIN metalab_businesses commenter_business ON commenter_business.student_id = commenter.id
           WHERE comment.post_id = post.id ORDER BY comment.created_at DESC LIMIT 30
         ) comment_row
       ), '[]'::json) AS comments
@@ -741,10 +758,12 @@ async function listInstalabPosts(studentId: string, authorOnly = false, teacherV
     JOIN metalab_classes class ON class.id = post.class_id
     WHERE ($3::boolean = TRUE OR post.class_id = (SELECT assignment.class_id FROM metalab_student_class_assignments assignment WHERE assignment.student_id = $1))
       AND ($2::boolean = FALSE OR post.student_id = $1)
-    ORDER BY post.created_at DESC LIMIT CASE WHEN $3::boolean THEN NULL::integer ELSE 100 END
-  `, [studentId, authorOnly, teacherView]);
+    ORDER BY post.created_at DESC LIMIT CASE WHEN $3::boolean THEN NULL::integer ELSE $4::integer END
+    OFFSET CASE WHEN $3::boolean THEN 0 ELSE $5::integer END
+  `, [studentId, authorOnly, teacherView, limit, offset]);
   return result.rows.map(row => ({
-    id: row.id, studentId: row.student_id, classId: row.class_id, authorName: row.author_name, businessName: row.business_name, className: row.class_name,
+    id: row.id, studentId: row.student_id, classId: row.class_id, authorName: row.author_name, businessName: row.business_name,
+    businessSegment: row.business_segment, businessDescription: row.business_description, hasAvatar: row.has_avatar, className: row.class_name,
     body: row.body, imageName: row.image_name, imageMimeType: row.image_mime_type,
     imageSizeBytes: row.image_size_bytes === null ? null : Number(row.image_size_bytes),
     createdAt: toIso(row.created_at), likeCount: Number(row.like_count), likedByMe: row.liked_by_me,
@@ -752,22 +771,134 @@ async function listInstalabPosts(studentId: string, authorOnly = false, teacherV
   }));
 }
 
-export async function listStudentInstalabPosts(studentId: string) { return listInstalabPosts(studentId); }
+export async function listStudentInstalabPosts(studentId: string, limit = 100, offset = 0, authorOnly = false) { return listInstalabPosts(studentId, authorOnly, false, limit, offset); }
+export async function countStudentInstalabPosts(studentId: string, authorOnly = false) {
+  const result = await getPool().query<{ total: number | string }>(`
+    SELECT COUNT(*) AS total FROM metalab_instalab_posts post
+    JOIN metalab_student_class_assignments assignment ON assignment.student_id = $1 AND assignment.class_id = post.class_id
+    JOIN metalab_students student ON student.id = post.student_id AND student.archived_at IS NULL
+    WHERE EXISTS (SELECT 1 FROM metalab_businesses WHERE student_id = $1)
+      AND ($2::boolean = FALSE OR post.student_id = $1)
+  `, [studentId, authorOnly]);
+  return Number(result.rows[0]?.total ?? 0);
+}
 export async function listTeacherInstalabPostsForStudent(studentId: string) { return listInstalabPosts(studentId, true, true); }
 export async function listTeacherInstalabPosts() { return listInstalabPosts('00000000-0000-0000-0000-000000000000', false, true); }
 
-export async function createInstalabPost(input: { studentId: string; body: string; imageName: string | null; imageMimeType: string | null; imageData: Buffer | null }) {
-  const result = await getPool().query<{ id: string }>(`
-    INSERT INTO metalab_instalab_posts
-      (id, class_id, student_id, business_id, body, image_name, image_mime_type, image_size_bytes, image_data)
-    SELECT $1, assignment.class_id, student.id, business.id, $2, $3, $4, $5, $6
-    FROM metalab_students student
-    JOIN metalab_student_class_assignments assignment ON assignment.student_id = student.id
-    JOIN metalab_businesses business ON business.student_id = student.id
-    WHERE student.id = $7 AND student.archived_at IS NULL
-    RETURNING id
-  `, [randomUUID(), input.body, input.imageName, input.imageMimeType, input.imageData?.byteLength ?? null, input.imageData, input.studentId]);
-  return result.rows[0]?.id ?? null;
+export async function getStudentInstalabSponsoredAd(studentId: string) {
+  return transaction(async client => {
+    const viewer = await client.query<{ class_id: string }>(`SELECT assignment.class_id FROM metalab_student_class_assignments assignment JOIN metalab_businesses business ON business.student_id=assignment.student_id WHERE assignment.student_id=$1`, [studentId]);
+    if (!viewer.rows[0]) return null;
+    const setting = await client.query<{ timezone_name: string }>(`SELECT timezone_name FROM metalab_instalab_economy_settings WHERE singleton=TRUE`);
+    const timezoneName = setting.rows[0]?.timezone_name || 'America/Sao_Paulo';
+    const now = await client.query<{ day: string }>(`SELECT (clock_timestamp() AT TIME ZONE $1)::date::text AS day`, [timezoneName]);
+    const day = now.rows[0].day;
+    const alreadyServed = await client.query<{ id: string; student_id: string; class_id: string; caption: string; business_name: string; author_name: string; image_mime_type: string | null; source_post_id: string | null; starts_at: Date | string; ends_at: Date | string }>(`
+      SELECT campaign.id,campaign.student_id,campaign.class_id,campaign.caption,business.name AS business_name,student.full_name AS author_name,
+        COALESCE(campaign.image_mime_type,source.image_mime_type) AS image_mime_type,campaign.source_post_id,campaign.starts_at,campaign.paid_through AS ends_at
+      FROM metalab_instalab_campaign_impressions impression
+      JOIN metalab_instalab_campaigns campaign ON campaign.id=impression.campaign_id
+      JOIN metalab_businesses business ON business.student_id=campaign.student_id
+      JOIN metalab_students student ON student.id=campaign.student_id AND student.archived_at IS NULL
+      LEFT JOIN metalab_instalab_posts source ON source.id=campaign.source_post_id
+      WHERE impression.student_id=$1 AND impression.impression_day=$2::date AND campaign.class_id=$3
+        AND campaign.status='active' AND campaign.paid_through>NOW()
+      ORDER BY impression.created_at DESC LIMIT 1
+    `, [studentId, day, viewer.rows[0].class_id]);
+    const priorAd = alreadyServed.rows[0];
+    if (priorAd) return { id: priorAd.id, studentId: priorAd.student_id, classId: priorAd.class_id, businessName: priorAd.business_name, authorName: priorAd.author_name, caption: priorAd.caption, imageMimeType: priorAd.image_mime_type, sourcePostId: priorAd.source_post_id, startsAt: toIso(priorAd.starts_at), endsAt: toIso(priorAd.ends_at) };
+    const candidate = await client.query<{ id: string; student_id: string; class_id: string; caption: string; business_name: string; author_name: string; image_mime_type: string | null; source_post_id: string | null; starts_at: Date | string; ends_at: Date | string }>(`
+      SELECT campaign.id,campaign.student_id,campaign.class_id,campaign.caption,business.name AS business_name,student.full_name AS author_name,
+        COALESCE(campaign.image_mime_type,source.image_mime_type) AS image_mime_type,campaign.source_post_id,campaign.starts_at,campaign.paid_through AS ends_at
+      FROM metalab_instalab_campaigns campaign
+      JOIN metalab_businesses business ON business.student_id=campaign.student_id
+      JOIN metalab_students student ON student.id=campaign.student_id AND student.archived_at IS NULL
+      LEFT JOIN metalab_instalab_posts source ON source.id=campaign.source_post_id
+      WHERE campaign.class_id=$1 AND campaign.student_id<>$2 AND campaign.status='active'
+        AND campaign.paid_through>NOW()
+        AND NOT EXISTS (SELECT 1 FROM metalab_instalab_campaign_impressions seen WHERE seen.campaign_id=campaign.id AND seen.student_id=$2 AND seen.impression_day=$3::date)
+      ORDER BY (SELECT COUNT(*) FROM metalab_instalab_campaign_impressions count_row WHERE count_row.campaign_id=campaign.id) ASC,campaign.starts_at ASC
+      LIMIT 1 FOR UPDATE OF campaign SKIP LOCKED
+    `, [viewer.rows[0].class_id, studentId, day]);
+    const ad = candidate.rows[0];
+    if (!ad) return null;
+    await client.query(`INSERT INTO metalab_instalab_campaign_impressions(campaign_id,student_id,impression_day) VALUES($1,$2,$3::date) ON CONFLICT DO NOTHING`, [ad.id, studentId, day]);
+    return { id: ad.id, studentId: ad.student_id, classId: ad.class_id, businessName: ad.business_name, authorName: ad.author_name, caption: ad.caption, imageMimeType: ad.image_mime_type, sourcePostId: ad.source_post_id, startsAt: toIso(ad.starts_at), endsAt: toIso(ad.ends_at) };
+  });
+}
+
+export async function getStudentInstalabCampaignImage(campaignId: string, studentId: string) {
+  const result = await getPool().query<{ image_data: Buffer; image_mime_type: string; image_name: string | null }>(`
+    SELECT COALESCE(campaign.image_data,post.image_data) AS image_data,
+      COALESCE(campaign.image_mime_type,post.image_mime_type) AS image_mime_type,
+      COALESCE(campaign.image_name,post.image_name) AS image_name
+    FROM metalab_instalab_campaigns campaign
+    LEFT JOIN metalab_instalab_posts post ON post.id=campaign.source_post_id
+    WHERE campaign.id=$1 AND campaign.status='active' AND campaign.paid_through>NOW()
+      AND campaign.class_id=(SELECT assignment.class_id FROM metalab_student_class_assignments assignment WHERE assignment.student_id=$2)
+      AND EXISTS (SELECT 1 FROM metalab_businesses WHERE student_id=$2)
+      AND COALESCE(campaign.image_data,post.image_data) IS NOT NULL
+  `, [campaignId, studentId]);
+  return result.rows[0] ?? null;
+}
+
+export async function createInstalabPost(input: { studentId: string; body: string; imageName: string | null; imageMimeType: string | null; imageData: Buffer | null; requestId: string }) {
+  return transaction(async client => {
+    await client.query("SELECT set_config('metalab.actor_role','student',true)");
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 731902))', [input.studentId]);
+    const prior = await client.query<{ id: string; reward: number | string | null; balance: number | string }>(`
+      SELECT post.id, reward.amount AS reward,
+        (SELECT COALESCE(SUM(amount),0) FROM metalab_instalab_wallet_entries WHERE student_id = post.student_id) AS balance
+      FROM metalab_instalab_posts post
+      LEFT JOIN metalab_instalab_wallet_entries reward ON reward.post_id = post.id AND reward.entry_type = 'post_reward'
+      WHERE post.student_id = $1 AND post.creation_request_id = $2
+    `, [input.studentId, input.requestId]);
+    if (prior.rows[0]) return { id: prior.rows[0].id, reward: Number(prior.rows[0].reward ?? 0), balance: Number(prior.rows[0].balance), duplicate: true };
+
+    const postId = randomUUID();
+    const result = await client.query<{ id: string }>(`
+      INSERT INTO metalab_instalab_posts
+        (id, class_id, student_id, business_id, body, image_name, image_mime_type, image_size_bytes, image_data, creation_request_id)
+      SELECT $1, assignment.class_id, student.id, business.id, $2, $3, $4, $5, $6, $8
+      FROM metalab_students student
+      JOIN metalab_student_class_assignments assignment ON assignment.student_id = student.id
+      JOIN metalab_businesses business ON business.student_id = student.id
+      WHERE student.id = $7 AND student.archived_at IS NULL
+      RETURNING id
+    `, [postId, input.body, input.imageName, input.imageMimeType, input.imageData?.byteLength ?? null, input.imageData, input.studentId, input.requestId]);
+    if (!result.rows[0]) return null;
+
+    const settings = await client.query<{ timezone_name: string; post_reward: number; daily_reward_cap: number }>(`
+      SELECT timezone_name, post_reward, daily_reward_cap
+      FROM metalab_instalab_economy_settings WHERE singleton = TRUE
+    `);
+    const policy = settings.rows[0];
+    let reward = 0;
+    if (policy) {
+      const localDate = await client.query<{ local_date: string }>(`SELECT (clock_timestamp() AT TIME ZONE $1)::date::text AS local_date`, [policy.timezone_name]);
+      const date = localDate.rows[0].local_date;
+      const fingerprintInput = input.imageData?.byteLength ? input.imageData : Buffer.from(input.body.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('pt-BR'));
+      const fingerprint = createHash('sha256').update(fingerprintInput).digest('hex');
+      const claim = await client.query(`INSERT INTO metalab_instalab_daily_content_claims(id,student_id,post_id,local_activity_date,content_fingerprint) VALUES($1,$2,$3,$4::date,$5) ON CONFLICT(student_id,local_activity_date,content_fingerprint) DO NOTHING RETURNING id`, [randomUUID(), input.studentId, postId, date, fingerprint]);
+      if (!claim.rows[0]) {
+        await client.query(`INSERT INTO metalab_instalab_economy_security_events(student_id,class_id,event_type,operation_key,details) VALUES($1,(SELECT class_id FROM metalab_instalab_posts WHERE id=$2),'duplicate_content_suppressed',$3,jsonb_build_object('postId',$2,'fingerprintPrefix',$4::text)) ON CONFLICT(student_id,operation_key) DO NOTHING`, [input.studentId, postId, input.requestId, fingerprint.slice(0, 12)]);
+        await client.query(`SELECT metalab_record_student_activity($1,'instalab.duplicate_suppressed','instalab_post',$2,jsonb_build_object('contentRewarded',false),'metalab_instalab_economy_security_events',$3,(SELECT class_id FROM metalab_instalab_posts WHERE id=$2),'student')`, [input.studentId, postId, input.requestId]);
+      }
+      const [countResult, earnedResult] = await Promise.all([
+        client.query<{ count: number | string }>(`SELECT COUNT(*) AS count FROM metalab_instalab_daily_content_claims WHERE student_id = $1 AND local_activity_date = $2::date`, [input.studentId, date]),
+        client.query<{ earned: number | string }>(`SELECT COALESCE(SUM(amount),0) AS earned FROM metalab_instalab_wallet_entries WHERE student_id = $1 AND entry_type = 'post_reward' AND local_activity_date = $2::date`, [input.studentId, date])
+      ]);
+      const ordinal = Number(countResult.rows[0].count);
+      reward = claim.rows[0] ? rewardForValidPost(Number(earnedResult.rows[0].earned), { postReward: policy.post_reward, dailyRewardCap: policy.daily_reward_cap }) : 0;
+      if (reward > 0) await client.query(`
+        INSERT INTO metalab_instalab_wallet_entries(id, student_id, amount, entry_type, description, operation_key, post_id, local_activity_date)
+        VALUES ($1,$2,$3,'post_reward',$4,$5,$6,$7::date)
+        ON CONFLICT (operation_key) DO NOTHING
+      `, [randomUUID(), input.studentId, reward, ordinal === 1 ? 'Primeira publicação válida do dia' : `Publicação válida nº ${ordinal} do dia`, `post-reward:${postId}`, postId, date]);
+    }
+    const balanceResult = await client.query<{ balance: number | string }>(`SELECT COALESCE(SUM(amount),0) AS balance FROM metalab_instalab_wallet_entries WHERE student_id = $1`, [input.studentId]);
+    return { id: postId, reward, balance: Number(balanceResult.rows[0].balance), duplicate: false };
+  });
 }
 
 export async function getStudentInstalabImage(postId: string, studentId: string, teacher = false) {
@@ -781,16 +912,104 @@ export async function getStudentInstalabImage(postId: string, studentId: string,
   return result.rows[0] ?? null;
 }
 
+export async function getInstalabAvatar(targetStudentId: string, viewerStudentId?: string) {
+  const result = await getPool().query<{ image_data: Buffer; image_mime_type: string }>(`
+    SELECT target.instalab_avatar_data AS image_data, target.instalab_avatar_mime_type AS image_mime_type
+    FROM metalab_students target
+    WHERE target.id = $1 AND target.instalab_avatar_data IS NOT NULL
+      AND ($2::uuid IS NULL OR EXISTS (
+        SELECT 1 FROM metalab_student_class_assignments viewer_assignment
+        JOIN metalab_student_class_assignments target_assignment ON target_assignment.class_id = viewer_assignment.class_id
+        JOIN metalab_businesses viewer_business ON viewer_business.student_id = viewer_assignment.student_id
+        WHERE viewer_assignment.student_id = $2 AND target_assignment.student_id = target.id
+      ))
+  `, [targetStudentId, viewerStudentId ?? null]);
+  return result.rows[0] ?? null;
+}
+
+export async function saveInstalabAvatar(studentId: string, imageData: Buffer, mimeType: string) {
+  return transaction(async client => {
+    const result = await client.query<{ id: string; size_bytes: number }>(`
+      UPDATE metalab_students SET instalab_avatar_data = $2, instalab_avatar_mime_type = $3,
+        instalab_avatar_size_bytes = $4, instalab_avatar_updated_at = NOW(), updated_at = NOW()
+      WHERE id = $1 AND archived_at IS NULL RETURNING id, instalab_avatar_size_bytes AS size_bytes
+    `, [studentId, imageData, mimeType, imageData.byteLength]);
+    if (!result.rows[0]) return false;
+    const history = await client.query<{ installed: boolean }>(`SELECT to_regclass('public.metalab_student_activity_events') IS NOT NULL AS installed`);
+    if (history.rows[0]?.installed) {
+      await client.query(`
+        INSERT INTO metalab_student_activity_events
+          (student_id, actor_student_id, class_id, occurred_at, actor_role, event_type, entity_type, entity_id, payload, source_table, source_row_id)
+        SELECT $1, $1, assignment.class_id, NOW(), 'student', 'instalab.avatar_updated', 'student', $1::TEXT,
+          jsonb_build_object('mimeType', $2::text, 'sizeBytes', $3::integer), 'metalab_students', $1::TEXT || ':avatar:' || extract(epoch from clock_timestamp())::TEXT
+        FROM (SELECT 1) one
+        LEFT JOIN metalab_student_class_assignments assignment ON assignment.student_id = $1
+      `, [studentId, mimeType, imageData.byteLength]);
+    }
+    return true;
+  });
+}
+
+export async function removeInstalabAvatar(studentId: string) {
+  return transaction(async client => {
+    const result = await client.query<{ id: string }>(`
+      UPDATE metalab_students SET instalab_avatar_data = NULL, instalab_avatar_mime_type = NULL,
+        instalab_avatar_size_bytes = NULL, instalab_avatar_updated_at = NOW(), updated_at = NOW()
+      WHERE id = $1 AND instalab_avatar_data IS NOT NULL AND archived_at IS NULL RETURNING id
+    `, [studentId]);
+    if (!result.rows[0]) return false;
+    const history = await client.query<{ installed: boolean }>(`SELECT to_regclass('public.metalab_student_activity_events') IS NOT NULL AS installed`);
+    if (history.rows[0]?.installed) {
+      await client.query(`
+        INSERT INTO metalab_student_activity_events
+          (student_id, actor_student_id, class_id, occurred_at, actor_role, event_type, entity_type, entity_id, payload, source_table, source_row_id)
+        SELECT $1, $1, assignment.class_id, NOW(), 'student', 'instalab.avatar_removed', 'student', $1::TEXT,
+          '{}'::JSONB, 'metalab_students', $1::TEXT || ':avatar-removed:' || extract(epoch from clock_timestamp())::TEXT
+        FROM (SELECT 1) one
+        LEFT JOIN metalab_student_class_assignments assignment ON assignment.student_id = $1
+      `, [studentId]);
+    }
+    return true;
+  });
+}
+
 export async function setInstalabLike(postId: string, studentId: string, liked: boolean) {
+  let reward = 0;
+  let balance: number | null = null;
   if (liked) {
-    await getPool().query(`
-      INSERT INTO metalab_instalab_likes (post_id, student_id)
-      SELECT post.id, $2 FROM metalab_instalab_posts post
-      JOIN metalab_student_class_assignments assignment ON assignment.class_id = post.class_id AND assignment.student_id = $2
-      JOIN metalab_businesses business ON business.student_id = $2
-      WHERE post.id = $1
-      ON CONFLICT (post_id, student_id) DO NOTHING
-    `, [postId, studentId]);
+    await transaction(async client => {
+      await client.query("SELECT set_config('metalab.actor_role','student',true)");
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 731902))', [studentId]);
+      const inserted = await client.query<{ post_id: string }>(`
+        INSERT INTO metalab_instalab_likes (post_id, student_id)
+        SELECT post.id, $2 FROM metalab_instalab_posts post
+        JOIN metalab_student_class_assignments assignment ON assignment.class_id = post.class_id AND assignment.student_id = $2
+        JOIN metalab_businesses business ON business.student_id = $2
+        WHERE post.id = $1
+        ON CONFLICT (post_id, student_id) WHERE student_id IS NOT NULL DO NOTHING
+        RETURNING post_id
+      `, [postId, studentId]);
+      const postOwner = inserted.rows[0] ? await client.query<{ student_id: string }>('SELECT student_id FROM metalab_instalab_posts WHERE id=$1', [postId]) : null;
+      if (postOwner?.rows[0] && postOwner.rows[0].student_id !== studentId) {
+        const policy = await client.query<{ timezone_name: string; like_reward: number; daily_like_reward_limit: number; daily_reward_cap: number }>(`SELECT timezone_name,like_reward,daily_like_reward_limit,daily_reward_cap FROM metalab_instalab_economy_settings WHERE singleton=TRUE`);
+        const settings = policy.rows[0];
+        if (settings) {
+          const dayResult = await client.query<{ local_date: string }>(`SELECT (clock_timestamp() AT TIME ZONE $1)::date::text AS local_date`, [settings.timezone_name]);
+          const day = dayResult.rows[0].local_date;
+          const firstLike = await client.query(`INSERT INTO metalab_instalab_like_reward_claims(student_id,post_id,local_activity_date) VALUES($1,$2,$3::date) ON CONFLICT(student_id,post_id) DO NOTHING RETURNING post_id`, [studentId, postId, day]);
+          const [earned, count] = await Promise.all([
+            client.query<{ total: number | string }>(`SELECT COALESCE(SUM(amount),0) AS total FROM metalab_instalab_wallet_entries WHERE student_id=$1 AND entry_type IN ('post_reward','like_reward','comment_reward') AND local_activity_date=$2::date`, [studentId, day]),
+            client.query<{ total: number | string }>(`SELECT COUNT(*) AS total FROM metalab_instalab_wallet_entries WHERE student_id=$1 AND entry_type='like_reward' AND local_activity_date=$2::date`, [studentId, day])
+          ]);
+          if (firstLike.rows[0] && Number(count.rows[0].total) < settings.daily_like_reward_limit) {
+            reward = rewardForEligibleInteraction(settings.like_reward, Number(earned.rows[0].total), settings.daily_reward_cap);
+            if (reward > 0) await client.query(`INSERT INTO metalab_instalab_wallet_entries(id,student_id,amount,entry_type,description,operation_key,post_id,local_activity_date) VALUES($1,$2,$3,'like_reward','Curtida em publicação de outro aluno',$4,$5,$6::date) ON CONFLICT(operation_key) DO NOTHING`, [randomUUID(), studentId, reward, `like-reward:${postId}:${studentId}`, postId, day]);
+          }
+        }
+      }
+      const wallet = await client.query<{ balance: number | string }>(`SELECT COALESCE(SUM(amount),0) AS balance FROM metalab_instalab_wallet_entries WHERE student_id=$1`, [studentId]);
+      balance = Number(wallet.rows[0].balance);
+    });
   } else {
     await getPool().query(`
       DELETE FROM metalab_instalab_likes likes USING metalab_instalab_posts post
@@ -807,24 +1026,51 @@ export async function setInstalabLike(postId: string, studentId: string, liked: 
     LEFT JOIN metalab_instalab_likes likes ON likes.post_id = post.id
     WHERE post.id = $1 GROUP BY post.id
   `, [postId, studentId]);
-  return result.rows[0] ? { likeCount: Number(result.rows[0].like_count), likedByMe: result.rows[0].liked_by_me === true } : null;
+  return result.rows[0] ? { likeCount: Number(result.rows[0].like_count), likedByMe: result.rows[0].liked_by_me === true, reward, balance } : null;
 }
 
 export async function createInstalabComment(postId: string, studentId: string, body: string) {
-  const result = await getPool().query<{ id: string }>(`
-    INSERT INTO metalab_instalab_comments (id, post_id, student_id, author_role, author_name, body)
-    SELECT $1, post.id, student.id, 'student', student.full_name, $3 FROM metalab_instalab_posts post
-    JOIN metalab_students student ON student.id = $2
-    JOIN metalab_student_class_assignments assignment ON assignment.class_id = post.class_id AND assignment.student_id = $2
-    JOIN metalab_businesses business ON business.student_id = $2
-    WHERE post.id = $4
-    RETURNING id
-  `, [randomUUID(), studentId, body, postId]);
-  return result.rows[0]?.id ?? null;
+  return transaction(async client => {
+    await client.query("SELECT set_config('metalab.actor_role','student',true)");
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 731902))', [studentId]);
+    const duplicate = await client.query<{ id: string }>(`SELECT comment.id FROM metalab_instalab_comments comment JOIN metalab_instalab_posts post ON post.id=comment.post_id JOIN metalab_student_class_assignments assignment ON assignment.student_id=$2 AND assignment.class_id=post.class_id JOIN metalab_businesses business ON business.student_id=$2 WHERE comment.post_id=$1 AND comment.student_id=$2 AND lower(regexp_replace(trim(comment.body),'\\s+',' ','g'))=lower(regexp_replace(trim($3),'\\s+',' ','g')) ORDER BY comment.created_at DESC LIMIT 1`, [postId, studentId, body]);
+    if (duplicate.rows[0]) return { id: duplicate.rows[0].id, reward: 0, balance: null, duplicate: true };
+    const result = await client.query<{ id: string }>(`
+      INSERT INTO metalab_instalab_comments (id, post_id, student_id, author_role, author_name, body)
+      SELECT $1, post.id, student.id, 'student', student.full_name, $3 FROM metalab_instalab_posts post
+      JOIN metalab_students student ON student.id = $2
+      JOIN metalab_student_class_assignments assignment ON assignment.class_id = post.class_id AND assignment.student_id = $2
+      JOIN metalab_businesses business ON business.student_id = $2
+      WHERE post.id = $4
+      RETURNING id
+    `, [randomUUID(), studentId, body, postId]);
+    if (!result.rows[0]) return null;
+    let reward = 0;
+    const postOwner = await client.query<{ student_id: string }>('SELECT student_id FROM metalab_instalab_posts WHERE id=$1', [postId]);
+    if (postOwner.rows[0]?.student_id !== studentId) {
+      const policy = await client.query<{ timezone_name: string; comment_reward: number; daily_comment_reward_limit: number; daily_reward_cap: number }>(`SELECT timezone_name,comment_reward,daily_comment_reward_limit,daily_reward_cap FROM metalab_instalab_economy_settings WHERE singleton=TRUE`);
+      const settings = policy.rows[0];
+      if (settings) {
+        const dayResult = await client.query<{ local_date: string }>(`SELECT (clock_timestamp() AT TIME ZONE $1)::date::text AS local_date`, [settings.timezone_name]);
+        const day = dayResult.rows[0].local_date;
+        const [earned, count, claimed] = await Promise.all([
+          client.query<{ total: number | string }>(`SELECT COALESCE(SUM(amount),0) AS total FROM metalab_instalab_wallet_entries WHERE student_id=$1 AND entry_type IN ('post_reward','like_reward','comment_reward') AND local_activity_date=$2::date`, [studentId, day]),
+          client.query<{ total: number | string }>(`SELECT COUNT(*) AS total FROM metalab_instalab_wallet_entries WHERE student_id=$1 AND entry_type='comment_reward' AND local_activity_date=$2::date`, [studentId, day]),
+          client.query(`SELECT 1 FROM metalab_instalab_wallet_entries WHERE student_id=$1 AND post_id=$2 AND entry_type='comment_reward' AND local_activity_date=$3::date LIMIT 1`, [studentId, postId, day])
+        ]);
+        if (!claimed.rows[0] && Number(count.rows[0].total) < settings.daily_comment_reward_limit) {
+          reward = rewardForEligibleInteraction(settings.comment_reward, Number(earned.rows[0].total), settings.daily_reward_cap);
+          if (reward > 0) await client.query(`INSERT INTO metalab_instalab_wallet_entries(id,student_id,amount,entry_type,description,operation_key,post_id,local_activity_date) VALUES($1,$2,$3,'comment_reward','Comentário em publicação de outro aluno',$4,$5,$6::date) ON CONFLICT(operation_key) DO NOTHING`, [randomUUID(), studentId, reward, `comment-reward:${studentId}:${postId}:${day}`, postId, day]);
+        }
+      }
+    }
+    const wallet = await client.query<{ balance: number | string }>(`SELECT COALESCE(SUM(amount),0) AS balance FROM metalab_instalab_wallet_entries WHERE student_id=$1`, [studentId]);
+    return { id: result.rows[0].id, reward, balance: Number(wallet.rows[0].balance), duplicate: false };
+  });
 }
 
 export async function deleteInstalabPost(postId: string, studentId: string) {
-  const result = await getPool().query(`DELETE FROM metalab_instalab_posts WHERE id = $1 AND student_id = $2 RETURNING id`, [postId, studentId]);
+  const result = await transaction(async client=>{await client.query("SELECT set_config('metalab.actor_role','student',true)");return client.query(`DELETE FROM metalab_instalab_posts WHERE id = $1 AND student_id = $2 RETURNING id`, [postId, studentId]);});
   return Boolean(result.rowCount);
 }
 
@@ -846,7 +1092,9 @@ export async function updateInstalabPost(input: { postId: string; studentId: str
 }
 
 export async function updateTeacherInstalabPost(input: { postId: string; body: string; imageName: string | null; imageMimeType: string | null; imageData: Buffer | null; removeImage: boolean }) {
-  const result = await getPool().query(`
+  const result = await transaction(async client=>{
+    await client.query("SELECT set_config('metalab.actor_role','teacher',true)");
+    return client.query(`
     UPDATE metalab_instalab_posts post SET
       body = $2,
       image_name = CASE WHEN $6 THEN NULL WHEN $4::bytea IS NOT NULL THEN $3 ELSE post.image_name END,
@@ -857,11 +1105,12 @@ export async function updateTeacherInstalabPost(input: { postId: string; body: s
       AND (length(trim($2)) > 0 OR (CASE WHEN $6 THEN NULL::bytea WHEN $4::bytea IS NOT NULL THEN $4 ELSE post.image_data END) IS NOT NULL)
     RETURNING post.id
   `, [input.postId, input.body, input.imageName, input.imageData, input.imageMimeType, input.removeImage]);
+  });
   return Boolean(result.rowCount);
 }
 
 export async function deleteTeacherInstalabPost(postId: string) {
-  const result = await getPool().query('DELETE FROM metalab_instalab_posts WHERE id = $1 RETURNING id', [postId]);
+  const result = await transaction(async client=>{await client.query("SELECT set_config('metalab.actor_role','teacher',true)");return client.query('DELETE FROM metalab_instalab_posts WHERE id = $1 RETURNING id', [postId]);});
   return Boolean(result.rowCount);
 }
 
@@ -875,7 +1124,7 @@ export async function createTeacherInstalabComment(postId: string, body: string)
 }
 
 export async function deleteTeacherInstalabComment(commentId: string) {
-  const result = await getPool().query('DELETE FROM metalab_instalab_comments WHERE id = $1 RETURNING id', [commentId]);
+  const result = await transaction(async client=>{await client.query("SELECT set_config('metalab.actor_role','teacher',true)");return client.query('DELETE FROM metalab_instalab_comments WHERE id = $1 RETURNING id', [commentId]);});
   return Boolean(result.rowCount);
 }
 
@@ -898,6 +1147,7 @@ export async function saveStudentPhoto(input: {
   product: string;
   angle: number;
   height: number;
+  lightingSettings: Record<string, unknown>;
   mimeType: string;
   imageData: Buffer;
 }) {
@@ -905,9 +1155,9 @@ export async function saveStudentPhoto(input: {
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`student-photo:${input.studentId}`]);
     const result = await client.query<{ id: string }>(`
       INSERT INTO metalab_student_photos
-        (id, student_id, client_photo_id, file_name, product, angle, height, mime_type, size_bytes, image_data)
+        (id, student_id, client_photo_id, file_name, product, angle, height, mime_type, size_bytes, image_data, lighting_settings)
       SELECT $1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::varchar,
-        $6::integer, $7::integer, $8::varchar, $9::integer, $10::bytea
+        $6::integer, $7::integer, $8::varchar, $9::integer, $10::bytea, $11::jsonb
       WHERE EXISTS (SELECT 1 FROM metalab_students WHERE id = $2)
         AND (EXISTS (SELECT 1 FROM metalab_student_photos WHERE student_id = $2 AND client_photo_id = $3::varchar)
           OR ((SELECT COUNT(*) FROM metalab_student_photos WHERE student_id = $2) < 10
@@ -919,10 +1169,11 @@ export async function saveStudentPhoto(input: {
         height = EXCLUDED.height,
         mime_type = EXCLUDED.mime_type,
         size_bytes = EXCLUDED.size_bytes,
-        image_data = EXCLUDED.image_data
+        image_data = EXCLUDED.image_data,
+        lighting_settings = EXCLUDED.lighting_settings
       RETURNING id
     `, [randomUUID(), input.studentId, input.clientPhotoId, input.fileName, input.product, input.angle, input.height,
-      input.mimeType, input.imageData.byteLength, input.imageData]);
+      input.mimeType, input.imageData.byteLength, input.imageData, JSON.stringify(input.lightingSettings)]);
     return result.rows[0]?.id ?? null;
   });
 }
@@ -959,6 +1210,7 @@ export async function getTeacherStudent(studentId: string) {
 
 export async function archiveTeacherStudent(studentId: string) {
   return transaction(async client => {
+    await client.query("SELECT set_config('metalab.actor_role','teacher',true)");
     const archived = await client.query(`
       UPDATE metalab_students
       SET archived_at = NOW(), updated_at = NOW()
@@ -977,7 +1229,9 @@ export async function archiveTeacherStudent(studentId: string) {
 }
 
 export async function restoreTeacherStudent(studentId: string) {
-  const restored = await getPool().query(`
+  const restored = await transaction(async client=>{
+    await client.query("SELECT set_config('metalab.actor_role','teacher',true)");
+    return client.query(`
     UPDATE metalab_students student
     SET archived_at = NULL, updated_at = NOW()
     WHERE student.id = $1 AND student.archived_at IS NOT NULL
@@ -989,20 +1243,21 @@ export async function restoreTeacherStudent(studentId: string) {
       )
     RETURNING student.id
   `, [studentId]);
+  });
   return Boolean(restored.rowCount);
 }
 
 export async function listStudentPhotos(studentId: string): Promise<StudentPhotoSummary[]> {
   const result = await getPool().query<{
-    id: string; file_name: string; product: string; angle: number; height: number;
+    id: string; file_name: string; product: string; angle: number; height: number; lighting_settings: Record<string, unknown>;
     mime_type: string; size_bytes: number; created_at: Date | string;
   }>(`
-    SELECT id, file_name, product, angle, height, mime_type, size_bytes, created_at
+    SELECT id, file_name, product, angle, height, lighting_settings, mime_type, size_bytes, created_at
     FROM metalab_student_photos WHERE student_id = $1 ORDER BY created_at DESC
   `, [studentId]);
   return result.rows.map(row => ({
     id: row.id, fileName: row.file_name, product: row.product, angle: row.angle,
-    height: row.height, mimeType: row.mime_type, sizeBytes: row.size_bytes, createdAt: toIso(row.created_at)
+    height: row.height, lightingSettings: row.lighting_settings || {}, mimeType: row.mime_type, sizeBytes: row.size_bytes, createdAt: toIso(row.created_at)
   }));
 }
 
