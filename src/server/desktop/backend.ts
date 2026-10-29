@@ -38,6 +38,12 @@ export type DesktopBackendTarget = {
   address: ResolvedAddress;
 };
 
+type PinnedLookupCallback = (
+  error: NodeJS.ErrnoException | null,
+  address: string | ResolvedAddress[],
+  family?: number
+) => void;
+
 type ResolveOptions = {
   allowTestLocal?: boolean;
   lookup?: (hostname: string) => Promise<ResolvedAddress[]>;
@@ -171,6 +177,16 @@ export function isTlsCertificateErrorCode(code: string): boolean {
   return /^(?:CERT_|ERR_TLS_|UNABLE_TO_VERIFY|DEPTH_ZERO|SELF_SIGNED|ERR_OSSL_)/u.test(code);
 }
 
+export function createPinnedLookup(address: ResolvedAddress) {
+  return (_hostname: string, options: { all?: boolean }, callback: PinnedLookupCallback) => {
+    const pinnedAddress = { address: address.address, family: address.family };
+    // Node's auto-family selection asks custom lookup functions for all results.
+    // Returning the single-address shape in that mode raises ERR_INVALID_IP_ADDRESS.
+    if (options?.all) callback(null, [pinnedAddress]);
+    else callback(null, pinnedAddress.address, pinnedAddress.family);
+  };
+}
+
 export async function verifyMetaLabDesktopBackend(target: DesktopBackendTarget, headers: Record<string, string> = {}): Promise<void> {
   const response = await requestDesktopBackend(target, '/api/desktop/identity', { headers: { Accept: 'application/json', ...headers }, timeoutMs: 10_000 });
   if (response.status === 404) throw new DesktopBackendError('not_found');
@@ -193,9 +209,7 @@ export async function requestDesktopBackend(
   const url = new URL(apiPath, target.origin);
   if (url.origin !== target.origin) throw new DesktopBackendError('invalid_url');
   const request = target.protocol === 'https:' ? httpsRequest : httpRequest;
-  const pinnedLookup = ((_hostname: string, _lookupOptions: unknown, callback: (error: NodeJS.ErrnoException | null, address: string, family: number) => void) => {
-    callback(null, target.address.address, target.address.family);
-  }) as never;
+  const pinnedLookup = createPinnedLookup(target.address);
   return await new Promise((resolve, reject) => {
     const outgoing = request(url, {
       method: options.method || 'GET',

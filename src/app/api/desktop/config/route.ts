@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
       if (error.code === 'not_found') return json({ error: 'A versão Web atual ainda não publicou as rotas necessárias do Desktop. Publique o backend atualizado primeiro.' }, 502);
       if (error.code === 'remote_unauthorized' || error.code === 'remote_forbidden') return json({ error: 'O servidor recusou a validação de identidade.' }, 502);
       if (error.code === 'remote_server_error') return json({ error: 'O servidor Web respondeu com erro interno.' }, 502);
+      if (error.code === 'incompatible') return json({ error: 'Backend incompatível. O servidor não anunciou a identidade e o protocolo esperados do MetaLab Pocket.' }, 502);
       if (error.code === 'tls_certificate') return json({ error: 'Certificado HTTPS inválido.' }, 502);
       if (error.code === 'dns_failure') return json({ error: 'Não foi possível localizar o servidor pelo DNS.' }, 503);
       if (error.code === 'network_unavailable') return json({ error: 'A rede está indisponível.' }, 503);

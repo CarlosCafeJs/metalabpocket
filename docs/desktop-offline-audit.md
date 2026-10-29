@@ -246,3 +246,35 @@ Para o login Desktop funcionar contra o domínio oficial, publique o backend Web
 - Verificação somente leitura anterior ao deploy: `GET https://metalab.cafeflow.com.br/api/desktop/identity` respondeu 404, indicando que a versão Web publicada ainda não contém as rotas Desktop. O código local inclui `/api/desktop/identity` e `/api/student/desktop-sync`; publicar o commit na branch de deploy é necessário para provisionamento online.
 - Nenhuma credencial de aluno, escrita de teste, migration ou alteração no banco de produção foi feita nesta atualização.
 - O relatório será complementado com o commit enviado e o resultado da verificação pós-deploy quando a conectividade com GitHub e o serviço de produção estiver disponível.
+
+## Diagnóstico de indisponibilidade do Desktop — 29/10/2026
+
+### Estado do deploy e causa das falhas
+
+- Branch do deploy: `origin/HEAD` aponta para `origin/main`. O commit `d992c0f` já está em `origin/main`; os checks associados a ele na Vercel e na Railway estão `success`. O branch local `main` ainda aponta para o commit anterior (`6d52d7d`); o branch de trabalho `codex/desktop-offline-phase1` era o que estava alinhado com `origin/main` no início desta correção.
+- A resposta 404 antiga ocorreu antes de a versão com `/api/desktop/identity` chegar ao deploy. Após o deploy automático do commit `d992c0f`, a consulta pública retornou HTTP 200 e o corpo exato `{"application":"metalab-pocket","capability":"desktop-offline-sync","protocolVersion":1}`.
+- A falha genérica ainda vista no cliente Desktop tinha outra causa: `requestDesktopBackend` fixava o IP DNS com um callback que só devolvia `(endereço, família)`. O Node no Windows pode chamar esse callback com `options.all === true`; nesse modo exige uma lista de endereços. O formato incorreto gerava `ERR_INVALID_IP_ADDRESS`, que era mapeado como `server_unavailable`. A reprodução com o callback anterior falhou; a mesma chamada HTTPS com o formato `all` correto recebeu HTTP 200 e identidade válida.
+- A autenticação docente usa corretamente `POST /api/teacher/session` com `{ cpf, password }`; o endpoint exige origem igual ao host, retorna `authenticated: true` e cookie `metalab_teacher_session` no sucesso. A configuração valida a identidade antes de transmitir credenciais e só salva o servidor depois de validar o cookie. Nenhuma credencial real foi enviada durante este diagnóstico.
+
+### Correção local preparada
+
+- `src/server/desktop/backend.ts`: callback DNS pinado agora respeita ambos os contratos do Node (`all: true` retorna lista; caso contrário retorna endereço e família), preservando o IP público validado, SNI e `rejectUnauthorized: true`.
+- `scripts/desktop-backend-validation.test.mjs`: regressão automatizada para os modos single e `all` do callback.
+- `src/app/api/desktop/config/route.ts`: incompatibilidade do backend tem mensagem explícita; as mensagens específicas de rota ausente, DNS, TLS, timeout, autenticação, autorização e indisponibilidade permanecem.
+- `GET /api/desktop/identity` em produção: HTTP 200 e marcador esperado. A mesma implementação cliente do Desktop, já com a correção local, validou a identidade via HTTPS.
+- `GET /api/student/desktop-sync` em produção: HTTP 405, esperado porque a rota aceita POST; isso confirma que a rota está publicada sem criar provisionamento. `GET /dashboard`: HTTP 200.
+- A build Web lista `/api/desktop/identity` e `/api/student/desktop-sync`. As rotas locais de configuração/conexão/sessão/sincronização exigem `METALAB_DESKTOP_MODE=1` ou passam por `isDesktopSameOrigin`, que exige o modo local; a rota pública `identity` só divulga o marcador de compatibilidade. A rota remota de sincronização exige sessão autenticada ou token de provisionamento.
+- Verificação dos artefatos: zero arquivos `.env*` e zero bancos SQLite dentro de `.next/server` e do standalone Desktop. A migration 015 continua compatível com as tabelas existentes e consta aplicada anteriormente; não foi executada nem reaplicada.
+
+### Testes e limites
+
+- `npm run typecheck`: passou.
+- `npm test`: 14 testes passaram, incluindo a regressão de callback DNS.
+- `npm run build`: passou e lista ambas as rotas Desktop remotas.
+- `METALAB_DESKTOP_DIST_DIR=.next-desktop-final-20261029 npm run desktop:build`: passou.
+- `METALAB_DESKTOP_DIST_DIR=.next-desktop-final-20261029 npm run desktop:test`: passou; usa SQLite temporário e backend simulado.
+- `npm run desktop` não existe em `package.json`; o script de execução é `npm run desktop:run`. Esse script iniciou o Electron local e exibiu o servidor oficial padrão. O cliente corrigido também validou a identidade real por GET, sem enviar dados de aluno. Não foi feito login docente nem provisionamento: isso exige credenciais de uma conta de teste autorizada e o provisionamento cria dados em PostgreSQL.
+- Nenhum deploy foi iniciado nesta etapa. A correção de DNS e este relatório estão apenas no branch local de trabalho; publicar esse commit na `main` causará um novo deploy e depende de confirmação explícita do usuário.
+- O instalador NSIS existente é anterior a esta correção e não foi reinstalado nem validado com autenticação. Para encerrar a validação ponta a ponta ainda falta publicar a correção, gerar/instalar a versão Desktop atualizada e testar com conta e turma de teste autorizadas.
+
+**Estado:** as rotas Web estão publicadas e a identidade do backend é validada pelo cliente corrigido; o erro DNS foi isolado e corrigido localmente. A conexão autenticada do aluno/professor e a sincronização de dados reais não foram testadas. Aguarda-se autorização para publicar o commit local e, depois, dados de teste autorizados para a validação ponta a ponta.

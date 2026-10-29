@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   DesktopBackendError,
+  createPinnedLookup,
   isMetaLabDesktopIdentity,
   isNonPublicAddress,
   isTlsCertificateErrorCode,
@@ -57,4 +58,20 @@ test('TLS certificate failures are classified without weakening certificate vali
   assert.equal(isTlsCertificateErrorCode('ERR_TLS_CERT_ALTNAME_INVALID'), true);
   assert.equal(isTlsCertificateErrorCode('UNABLE_TO_VERIFY_LEAF_SIGNATURE'), true);
   assert.equal(isTlsCertificateErrorCode('ECONNRESET'), false);
+});
+
+test('pinned DNS lookup supports Node single-address and all-address callback contracts', async () => {
+  const pinned = { address: '93.184.216.34', family: 4 };
+  const lookup = createPinnedLookup(pinned);
+  const single = await new Promise((resolve, reject) => lookup('aula.example.org', {}, (error, address, family) => {
+    if (error) reject(error);
+    else resolve({ address, family });
+  }));
+  const all = await new Promise((resolve, reject) => lookup('aula.example.org', { all: true }, (error, addresses) => {
+    if (error) reject(error);
+    else resolve(addresses);
+  }));
+
+  assert.deepEqual(single, pinned);
+  assert.deepEqual(all, [pinned]);
 });
