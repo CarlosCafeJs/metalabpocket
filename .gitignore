@@ -1,6 +1,11 @@
 node_modules/
 .next/
+.next-desktop/
+.next-desktop-build/
+.next-desktop-runtime/
+.next-desktop-*/
 out/
+dist/desktop/
 *.tsbuildinfo
 .env
 .env.*

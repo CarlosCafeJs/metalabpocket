@@ -33,34 +33,37 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
   const router = useRouter();
   const session = useStudentState();
   const [hydrated, setHydrated] = useState(false);
+  const [desktop, setDesktop] = useState(false);
 
   useEffect(() => {
     setHydrated(true);
+    setDesktop(window.metaLabDesktop?.enabled === true);
     if (!session.loading && session.authenticated === false) router.replace('/');
+    if (!session.loading && session.authenticated && window.metaLabDesktop?.enabled && pathname !== '/missoes') router.replace('/missoes');
     if (!session.loading && session.authenticated && session.enrolled === false && pathname !== '/turmas') router.replace('/turmas');
   }, [router, pathname, session.authenticated, session.enrolled, session.loading]);
 
   async function leave() {
-    await fetch('/api/session', { method: 'DELETE', credentials: 'same-origin' }).catch(() => undefined);
+    await fetch(desktop ? '/api/desktop/session' : '/api/session', { method: 'DELETE', credentials: 'same-origin' }).catch(() => undefined);
     sessionStorage.removeItem('metalab-pocket-entry');
     window.dispatchEvent(new Event('metalab:session-changed'));
     router.replace('/');
     router.refresh();
   }
 
-  const needsClass = session.authenticated === true && session.enrolled === false;
+  const needsClass = !desktop && session.authenticated === true && session.enrolled === false;
   const blockedByClass = needsClass && pathname !== '/turmas';
 
   return (
     <div className={`app-shell${immersive ? ' immersive-shell' : ''}${socialMode ? ' social-shell' : ''}`}>
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
       {!needsClass && !socialMode && <aside className="app-sidebar" aria-label="Navegação principal">
-        <Link className="shell-brand" href="/dashboard" aria-label="MetaLab Pocket — Central">
+        <Link className="shell-brand" href={desktop ? '/missoes' : '/dashboard'} aria-label="MetaLab Pocket — Central">
           <Image src="/simulator/assets/metalab-logo.png" alt="MetaLab" width={142} height={84} priority />
           <span>POCKET</span>
         </Link>
         <nav className="shell-nav">
-          {navigation.map(item => {
+          {navigation.filter(item => !desktop || item.href === '/missoes').map(item => {
             const active = hydrated && (pathname === item.href || (item.href === '/missoes' && pathname.startsWith('/missoes/')));
             return (
               <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
@@ -86,7 +89,7 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
         </header>
 
         {!needsClass && !socialMode && <nav className="mobile-nav" aria-label="Navegação móvel">
-          {navigation.map(item => {
+          {navigation.filter(item => !desktop || item.href === '/missoes').map(item => {
             const active = hydrated && (pathname === item.href || (item.href === '/missoes' && pathname.startsWith('/missoes/')));
             return <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>{item.label}</Link>;
           })}

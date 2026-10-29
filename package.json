@@ -6,6 +6,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",
+    "desktop:build": "node scripts/build-desktop.mjs",
+    "desktop:run": "electron .",
+    "desktop:test": "node --test scripts/desktop-flow-check.mjs",
+    "desktop:dir": "electron-builder --dir --config electron-builder.config.cjs",
+    "desktop:dist:win": "electron-builder --win nsis --config electron-builder.config.cjs",
     "start": "next start",
     "db:migrate": "node scripts/migrate.mjs",
     "instalab:bill": "node scripts/bill-instalab-campaigns.mjs",
@@ -24,6 +29,9 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "electron": "45.1.0",
+    "electron-builder": "^26.18.0",
     "typescript": "^7.0.2"
-  }
+  },
+  "main": "electron/main.cjs"
 }

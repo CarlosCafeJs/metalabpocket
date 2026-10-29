@@ -35,9 +35,10 @@ type StudentState = {
   business: BusinessProfile | null;
   progress: ProgressSummary | null;
   enrolled: boolean | null;
+  desktopBackendOrigin: string | null;
 };
 
-const emptyState: StudentState = { student: null, business: null, progress: null, enrolled: null };
+const emptyState: StudentState = { student: null, business: null, progress: null, enrolled: null, desktopBackendOrigin: null };
 
 function readStudent(payload: Record<string, unknown>): StudentSummary | null {
   const source = (payload.student && typeof payload.student === 'object' ? payload.student : payload) as Record<string, unknown>;
@@ -122,6 +123,21 @@ export function useStudentState() {
     setLoading(true);
     setError('');
     try {
+      if (window.metaLabDesktop?.enabled) {
+        const response = await fetch('/api/desktop/session', { cache: 'no-store', credentials: 'same-origin' });
+        if (response.status === 401) {
+          setState(emptyState);
+          setAuthenticated(false);
+          return;
+        }
+        if (!response.ok) throw new Error('Não foi possível recuperar a sessão offline.');
+        const payload = await response.json() as Record<string, unknown>;
+        const student = readStudent(payload);
+        if (!student) throw new Error('A sessão offline recebida está incompleta.');
+        setAuthenticated(true);
+        setState({ student, business: null, progress: null, enrolled: payload.enrolled === true, desktopBackendOrigin: typeof payload.backendOrigin === 'string' ? payload.backendOrigin : null });
+        return;
+      }
       const response = await fetch('/api/me', { cache: 'no-store', credentials: 'same-origin' });
       if (response.status === 401) {
         setState(emptyState);
@@ -134,7 +150,7 @@ export function useStudentState() {
       if (!student) throw new Error('A sessão recebida está incompleta.');
       const enrolled = payload.enrolled === true;
       setAuthenticated(true);
-      setState({ student, business: enrolled ? readBusiness(payload.business) : null, progress: enrolled ? readProgress(payload) : null, enrolled });
+      setState({ student, business: enrolled ? readBusiness(payload.business) : null, progress: enrolled ? readProgress(payload) : null, enrolled, desktopBackendOrigin: null });
       if (enrolled) {
         try {
           if (!readBusiness(payload.business)) await refreshBusiness();

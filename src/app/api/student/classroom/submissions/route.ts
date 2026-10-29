@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { findEnrolledStudentBySessionToken, getPublishedClassroomMissionTasks, getPublishedClassroomTask, submitClassroomMissionResponse, submitClassroomTask } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { readJson, sameOrigin } from '@/server/validation';
+import { validateClassroomMissionAnswers } from '@/domain/classroom-answer-validation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,22 +20,8 @@ export async function POST(request: NextRequest) {
       const input=missionSchema.parse(body);
       const tasks=await getPublishedClassroomMissionTasks(input.missionId);
       if(!tasks.length)return NextResponse.json({error:'Esta missão não está liberada ou ainda não tem perguntas.'},{status:404,headers:noStore});
-      const supplied=new Map(input.answers.map(item=>[item.taskId,item.answer]));
-      if(supplied.size!==input.answers.length||input.answers.some(item=>!tasks.some(task=>task.id===item.taskId))||tasks.some(task=>task.required&&!supplied.has(task.id)))return NextResponse.json({error:'Revise as perguntas obrigatórias antes de enviar o formulário.'},{status:400,headers:noStore});
-      for(const task of tasks){
-        const answer=supplied.get(task.id);
-        const empty=answer===null||answer===''||(Array.isArray(answer)&&answer.length===0);
-        if(empty&&!task.required)continue;
-        const settings=task.settings||{};const scaleMin=Number(settings.scaleMin??1);const scaleMax=Number(settings.scaleMax??5);
-        const valid=task.type==='complete'?answer===true
-          :task.type==='text'||task.type==='short_answer'?typeof answer==='string'&&answer.trim().length>=1
-          :task.type==='multiple_choice'||task.type==='dropdown'?typeof answer==='string'&&task.options.some(option=>option.value===answer)
-          :task.type==='checkboxes'?Array.isArray(answer)&&answer.length>0&&answer.every(value=>task.options.some(option=>option.value===value))&&new Set(answer).size===answer.length
-          :task.type==='linear_scale'?typeof answer==='string'&&Number.isInteger(Number(answer))&&Number(answer)>=scaleMin&&Number(answer)<=scaleMax
-          :task.type==='date'?typeof answer==='string'&&/^\d{4}-\d{2}-\d{2}$/u.test(answer)&&!Number.isNaN(Date.parse(`${answer}T12:00:00Z`))
-          :false;
-        if(!valid)return NextResponse.json({error:`Confira a resposta: ${task.prompt}`},{status:400,headers:noStore});
-      }
+      const validationError = validateClassroomMissionAnswers(tasks, input.answers);
+      if (validationError) return NextResponse.json({ error: validationError }, { status: 400, headers: noStore });
       const submission=await submitClassroomMissionResponse({studentId:student.id,missionId:input.missionId,answers:input.answers});
       if(!submission)return NextResponse.json({error:'As respostas desta missão já foram registradas ou o módulo foi encerrado.'},{status:409,headers:noStore});
       return NextResponse.json({submission},{status:201,headers:noStore});

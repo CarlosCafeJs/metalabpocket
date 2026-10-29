@@ -552,6 +552,80 @@ export async function findEnrolledStudentBySessionToken(token: string) {
   return membership.rowCount ? student : null;
 }
 
+export async function getActiveStudentSessionExpiry(token: string) {
+  if (!isSessionToken(token)) return null;
+  const result = await getPool().query<{ expires_at: Date | string }>(`
+    SELECT expires_at FROM metalab_student_sessions
+    WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>NOW()
+  `, [hashSessionToken(token)]);
+  return result.rows[0] ? toIso(result.rows[0].expires_at) : null;
+}
+
+export async function findStudentByDesktopSyncToken(token: string) {
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(token)) return null;
+  const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex');
+  const result = await getPool().query<StudentRow & { class_id: string; provision_id: string }>(`
+    SELECT student.id,student.full_name,student.created_at,student.photo_sharing_consent,provision.class_id,provision.id provision_id
+    FROM metalab_desktop_provisions provision
+    JOIN metalab_students student ON student.id=provision.student_id AND student.archived_at IS NULL
+    JOIN metalab_student_class_assignments assignment
+      ON assignment.student_id=student.id AND assignment.class_id=provision.class_id
+    WHERE provision.sync_token_hash=$1 AND provision.revoked_at IS NULL AND provision.expires_at>NOW()
+    LIMIT 1
+  `, [tokenHash]);
+  return result.rows[0] ? { student: mapStudent(result.rows[0]), classId: result.rows[0].class_id, provisionId: result.rows[0].provision_id } : null;
+}
+
+export async function applyDesktopMissionOperation(input: {
+  operationId: string; requestHash: string; provisionId: string; studentId: string;
+  classId: string; missionId: string; snapshotHash: string;
+  answers: Array<{ taskId: string; answer: unknown }>;
+}) {
+  return transaction(async client => {
+    const previous = await client.query<{ request_hash: string; result: unknown }>(
+      `SELECT request_hash,result FROM metalab_desktop_sync_operations WHERE operation_id=$1`, [input.operationId]);
+    if (previous.rows[0]) {
+      if (previous.rows[0].request_hash !== input.requestHash) throw new Error('DESKTOP_OPERATION_ID_REUSED');
+      return { result: previous.rows[0].result as Record<string, unknown>, duplicate: true };
+    }
+    const provision = await client.query<{ mission_hashes: Record<string, string> }>(`
+      SELECT mission_hashes FROM metalab_desktop_provisions
+      WHERE id=$1 AND student_id=$2 AND class_id=$3 AND revoked_at IS NULL AND expires_at>NOW()
+      FOR UPDATE
+    `, [input.provisionId, input.studentId, input.classId]);
+    if (!provision.rows[0]) throw new Error('DESKTOP_PROVISION_EXPIRED');
+    if (provision.rows[0].mission_hashes[input.missionId] !== input.snapshotHash) throw new Error('DESKTOP_SNAPSHOT_CONFLICT');
+    const membership = await client.query(`
+      SELECT 1 FROM metalab_student_class_assignments assignment
+      WHERE assignment.student_id=$1 AND assignment.class_id=$2
+    `, [input.studentId, input.classId]);
+    if (!membership.rowCount) throw new Error('DESKTOP_CLASS_ACCESS_REVOKED');
+
+    const responseId = randomUUID();
+    const inserted: Array<{ id: string; submitted_at: Date | string }> = [];
+    for (const item of input.answers) {
+      const result = await client.query<{ id: string; submitted_at: Date | string }>(`
+        INSERT INTO metalab_teacher_task_submissions (id,response_id,student_id,task_id,answer)
+        SELECT $1,$2,$3,task.id,$5::jsonb FROM metalab_teacher_tasks task
+        JOIN metalab_teacher_missions mission ON mission.id=task.mission_id
+        JOIN metalab_teacher_modules module ON module.id=mission.module_id AND module.is_published=TRUE
+        WHERE task.id=$4 AND mission.id=$6
+          AND NOT EXISTS(SELECT 1 FROM metalab_teacher_task_submissions old WHERE old.task_id=task.id AND old.student_id=$3)
+        RETURNING id,submitted_at
+      `, [randomUUID(), responseId, input.studentId, item.taskId, JSON.stringify(item.answer), input.missionId]);
+      if (result.rows[0]) inserted.push(result.rows[0]);
+    }
+    if (!inserted.length || inserted.length !== input.answers.length) throw new Error('DESKTOP_MISSION_ALREADY_SUBMITTED');
+    const submittedAt = toIso(inserted[0].submitted_at);
+    const response = { responseId, submissionCount: inserted.length, submittedAt };
+    await client.query(`INSERT INTO metalab_desktop_sync_operations
+      (operation_id,provision_id,student_id,mission_id,request_hash,result)
+      VALUES($1,$2,$3,$4,$5,$6::jsonb)`,
+      [input.operationId, input.provisionId, input.studentId, input.missionId, input.requestHash, JSON.stringify(response)]);
+    return { result: response, duplicate: false };
+  });
+}
+
 export async function revokeSession(token: string) {
   if (!isSessionToken(token)) return;
   await getPool().query(`
