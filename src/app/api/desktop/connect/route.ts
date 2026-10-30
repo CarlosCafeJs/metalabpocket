@@ -1,8 +1,9 @@
+import { randomBytes } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { studentSchema, readJson } from '@/server/validation';
 import { desktopClaimsCookie, isDesktopSameOrigin, setDesktopCookie } from '@/server/desktop/auth';
-import { saveProvision, type DesktopModule } from '@/server/desktop/store';
+import { getProvisionWithPendingAnswers, saveProvision, updateRecoveredProvision, type DesktopModule } from '@/server/desktop/store';
 import { DesktopBackendError, requestDesktopBackend, resolveDesktopBackend, verifyMetaLabDesktopBackend } from '@/server/desktop/backend';
 import { getDesktopBackendOrigin } from '@/server/desktop/config';
 
@@ -59,6 +60,32 @@ export async function POST(request: NextRequest) {
     const cookie = setCookies.map(item => item.split(';', 1)[0]).find(item => item.startsWith('metalab_session='));
     const remoteToken = cookie?.slice('metalab_session='.length) || '';
     if (!/^[A-Za-z0-9_-]{43}$/u.test(remoteToken)) throw new DesktopBackendError('incompatible');
+
+    const pendingProvision = getProvisionWithPendingAnswers(loginBody.student.id);
+    if (pendingProvision) {
+      if (pendingProvision.backendUrl !== backend.origin) {
+        return NextResponse.json({ error: 'Há respostas pendentes vinculadas a outro servidor. Elas foram preservadas; configure o servidor anterior para recuperá-las.' }, { status: 409, headers: noStore });
+      }
+      const recoveryToken = randomBytes(32).toString('base64url');
+      const recoveryResponse = await requestDesktopBackend(backend, '/api/student/desktop-sync', {
+        method: 'POST', headers: { ...remoteHeaders, 'Content-Type': 'application/json', Cookie: `metalab_session=${remoteToken}` },
+        body: JSON.stringify({ action: 'recover', provisionId: pendingProvision.id }), timeoutMs: 20_000
+      });
+      const recovery = parseBackendJson(recoveryResponse.text) as { recovered?: boolean; provisionId?: string; syncToken?: string; classId?: string; expiresAt?: string; error?: string } | null;
+      if (recoveryResponse.status === 401) return NextResponse.json({ error: recovery?.error || 'Não foi possível revalidar a autorização. As respostas continuam salvas neste dispositivo.' }, { status: 401, headers: noStore });
+      if (recoveryResponse.status === 403 || recoveryResponse.status === 409) return NextResponse.json({ error: recovery?.error || 'A turma ou missão mudou. As respostas continuam salvas para análise do professor.' }, { status: 409, headers: noStore });
+      if (recoveryResponse.status === 404) throw new DesktopBackendError('not_found');
+      if (recoveryResponse.status >= 500 || recoveryResponse.status === 0) throw new DesktopBackendError('remote_server_error');
+      if (recoveryResponse.status !== 200 || !recovery?.recovered || recovery.provisionId !== pendingProvision.id || !recovery.syncToken || recovery.classId !== pendingProvision.classId || !recovery.expiresAt || Date.parse(recovery.expiresAt) <= Date.now()) {
+        throw new DesktopBackendError('incompatible');
+      }
+      updateRecoveredProvision({ id: pendingProvision.id, remoteToken, syncToken: recovery.syncToken, expiresAt: recovery.expiresAt });
+      const expiresAt = Date.parse(recovery.expiresAt);
+      const claims = desktopClaimsCookie(loginBody.student.id, pendingProvision.id, expiresAt);
+      const response = NextResponse.json({ student: { id: loginBody.student.id, displayName: loginBody.student.displayName }, enrolled: true, provisioned: true, recovered: true, expiresAt: recovery.expiresAt }, { headers: noStore });
+      setDesktopCookie(response, claims, expiresAt);
+      return response;
+    }
 
     const provisionResponse = await requestDesktopBackend(backend, '/api/student/desktop-sync', {
       method: 'POST', headers: { ...remoteHeaders, 'Content-Type': 'application/json', Cookie: `metalab_session=${remoteToken}` },

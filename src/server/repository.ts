@@ -576,6 +576,38 @@ export async function findStudentByDesktopSyncToken(token: string) {
   return result.rows[0] ? { student: mapStudent(result.rows[0]), classId: result.rows[0].class_id, provisionId: result.rows[0].provision_id } : null;
 }
 
+/** Re-issues a short-lived token for the same provision after an online student login.
+ * Mission snapshots and operation IDs are intentionally left untouched. */
+export async function renewDesktopProvisionAfterStudentLogin(input: {
+  provisionId: string; studentId: string; newTokenHash: string;
+}) {
+  return transaction(async client => {
+    const provision = await client.query<{ class_id: string }>(`
+      SELECT class_id FROM metalab_desktop_provisions
+      WHERE id=$1 AND student_id=$2 AND revoked_at IS NULL
+      FOR UPDATE
+    `, [input.provisionId, input.studentId]);
+    if (!provision.rows[0]) return null;
+
+    const membership = await client.query(`
+      SELECT 1 FROM metalab_student_class_assignments
+      WHERE student_id=$1 AND class_id=$2
+      FOR SHARE
+    `, [input.studentId, provision.rows[0].class_id]);
+    if (!membership.rowCount) return null;
+
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const updated = await client.query(`
+      UPDATE metalab_desktop_provisions
+      SET sync_token_hash=$3, expires_at=$4
+      WHERE id=$1 AND student_id=$2 AND revoked_at IS NULL
+      RETURNING class_id
+    `, [input.provisionId, input.studentId, input.newTokenHash, expiresAt]);
+    if (!updated.rows[0]) return null;
+    return { classId: updated.rows[0].class_id as string, expiresAt };
+  });
+}
+
 export async function applyDesktopMissionOperation(input: {
   operationId: string; requestHash: string; provisionId: string; studentId: string;
   classId: string; missionId: string; snapshotHash: string;

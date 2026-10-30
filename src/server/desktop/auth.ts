@@ -57,6 +57,19 @@ export function isDesktopSameOrigin(request: Request) {
   } catch { return false; }
 }
 
+export function isDesktopLocalRequest(request: Request) {
+  if (process.env.METALAB_DESKTOP_MODE !== '1') return false;
+  const host = request.headers.get('host')?.trim().toLowerCase() || '';
+  if (!/^(?:127\.0\.0\.1|localhost)(?::\d{1,5})?$/u.test(host)) return false;
+  const origin = request.headers.get('origin');
+  if (!origin) return true;
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === 'http:' && !parsed.username && !parsed.password
+      && parsed.pathname === '/' && !parsed.search && !parsed.hash && parsed.origin === `http://${host}`;
+  } catch { return false; }
+}
+
 export function desktopClaimsCookie(studentId: string, provisionId: string, expiresAt: number) {
   return signDesktopSession({ studentId, provisionId, expiresAt });
 }

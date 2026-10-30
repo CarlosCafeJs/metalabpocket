@@ -278,3 +278,97 @@ Para o login Desktop funcionar contra o domínio oficial, publique o backend Web
 - O instalador NSIS existente é anterior a esta correção e não foi reinstalado nem validado com autenticação. Para encerrar a validação ponta a ponta ainda falta publicar a correção, gerar/instalar a versão Desktop atualizada e testar com conta e turma de teste autorizadas.
 
 **Estado:** as rotas Web estão publicadas e a identidade do backend é validada pelo cliente corrigido; o erro DNS foi isolado e corrigido localmente. A conexão autenticada do aluno/professor e a sincronização de dados reais não foram testadas. Aguarda-se autorização para publicar o commit local e, depois, dados de teste autorizados para a validação ponta a ponta.
+
+## Fase 1.2 — Central de Sincronização — 29/10/2026
+
+### Auditoria e decisões
+
+- Reutilizado o único motor existente: `/api/desktop/sync` lê a outbox SQLite e envia respostas com os mesmos UUIDs idempotentes e a sessão de provisionamento já emitida pelo backend.
+- A outbox existente mantinha respostas cifradas e os estados `pending`, `syncing`, `synced`, `conflict`, `needs_auth` e `error`, mas não oferecia contagem completa, histórico, progresso por rodada, preferências persistentes, backoff ou trava concorrente.
+- A implementação acrescenta a versão 2 do schema **local SQLite** sem remover ou reescrever respostas existentes. Nenhuma migration PostgreSQL foi criada ou executada.
+- Para distinguir conectividade de autorização sem enviar respostas, o backend Web recebeu a ação somente leitura `POST /api/student/desktop-sync` com `{ "action": "authorize" }` e o token da provisão no cabeçalho `Authorization`. Ela verifica validade da provisão e vínculo atual com a turma; não cria operações acadêmicas.
+- A validação de rede continua usando HTTPS/TLS e identidade do MetaLab já existentes. A página informa separadamente o sinal de rede do dispositivo e o resultado do probe da API oficial.
+
+### Arquivos criados e alterados
+
+- Criados `src/app/sincronizacao/page.tsx`, `src/app/sincronizacao/SyncCenter.tsx`, `src/components/DesktopSyncCoordinator.tsx` e `src/app/desktop-sync.css` para a página, controles e coordenação automática apenas no shell Desktop.
+- `src/components/AppShell.tsx` mostra “Sincronização” somente no Desktop e aceita a rota Desktop na navegação; a visita à rota pela Web retorna ao dashboard. O coordenador não importa Electron e não introduz dependência Electron no bundle Web.
+- `src/server/desktop/store.ts` adiciona schema local v2 para preferências, rodadas, histórico sanitizado, leases entre processos e data de retry. As missões em cache voltam a ser ordenadas pela posição acadêmica.
+- `src/server/desktop/auth.ts` adiciona validação de leitura local com Host loopback e Origin validado quando presente; operações de escrita continuam exigindo same-origin estrito.
+- `src/app/api/desktop/sync/route.ts` congela o total da rodada, valida identidade e autorização antes de enviar respostas, aplica idempotência existente, atualiza confirmações reais e impede rodadas concorrentes entre processos.
+- Criadas `src/app/api/desktop/sync/status/route.ts` e `src/app/api/desktop/sync/preferences/route.ts` para diagnóstico protegido, contagens e configurações locais com intervalo permitido de 30 a 300 segundos.
+- `src/server/desktop/backend.ts` valida a autorização do token Desktop sem enviar conteúdo da outbox.
+- `src/app/api/student/desktop-sync/route.ts` implementa a verificação remota somente leitura da provisão e da turma.
+- `src/app/missoes/ClassroomMissions.tsx` deixa de disparar sincronização implícita ao abrir a página; a coordenação central respeita preferências, pausa e reconexão.
+- `scripts/desktop-flow-check.mjs` estende o teste de integração para preferências, concorrência entre dois processos, resposta perdida, retry, sessão expirada, conflito, rejeição, progresso e sanitização.
+
+### Estados, política de retry e proteção
+
+- O resumo conta respostas confirmadas, pendentes, em processamento, com falha, em conflito e aguardando autorização. Histórico contém horário, tipo genérico da operação, resultado, tentativas e somente códigos de erro sanitizados; respostas, tokens e detalhes privados do servidor não são exibidos.
+- Cada rodada grava um total fixo. O numerador cresce somente após resultado `synced` válido do servidor; conflito, rejeição, autorização expirada e resposta ausente não aumentam o progresso.
+- Falhas transitórias de DNS, rede, timeout, TLS ou HTTP 5xx recebem backoff exponencial com jitter: começa em 15 segundos e é limitado a uma hora. Autorização expirada, backend incompatível, operação inválida e conflitos não entram em repetição automática infinita. “Sincronizar agora” pode ignorar o backoff de falhas; uma pausa bloqueia qualquer nova rodada, manual ou automática.
+- Pausar não cancela uma rodada já em andamento. Um lease persistente de dez minutos, renovado por lote, impede outro processo Next de iniciar uma rodada simultânea. No boot, operações `syncing` só são recuperadas depois que o lease expirou; seus IDs idempotentes são preservados.
+- As preferências são por provisão/aluno e permanecem no SQLite local. A saída da sessão não apaga a outbox. O histórico fica restrito à sessão local autenticada.
+
+### Validação desta fase
+
+- `npm run typecheck`: passou.
+- `npm test`: passou, 14 testes.
+- `METALAB_DESKTOP_DIST_DIR=.next-desktop-phase12 npm run desktop:build`: passou e listou `/sincronizacao`, `/api/desktop/sync/status`, `/api/desktop/sync/preferences` e `/api/student/desktop-sync`.
+- `METALAB_DESKTOP_DIST_DIR=.next-desktop-phase12 npm run desktop:test`: passou. O fixture usa backend falso em loopback e SQLite temporário. Verificou respostas após reinício, configurações persistentes, pausa, sessão expirada separada de conectividade, retry após backoff, idempotência, rejeição sem retry automático, conflito, progresso confirmado e duas instâncias Next tentando sincronizar ao mesmo tempo.
+- `npm run build` Web: passou; listou a rota `/sincronizacao` e as APIs novas, sem falhas de compilação.
+- A primeira execução do teste integrado no sandbox não conseguiu acessar loopback; a execução autorizada fora do sandbox passou usando somente fixture local. O build Desktop/Web também precisou executar fora do sandbox para criar artefatos Next sob ACL local restritiva.
+- Nenhum dado de teste foi enviado à Railway, à Vercel ou ao domínio de produção; nenhuma migration ou escrita em PostgreSQL foi feita. O teste não valida autorização com conta real nem prova que o backend publicado já contém a nova ação `authorize`.
+
+### Pendências de publicação e distribuição
+
+- O backend de produção precisa receber `src/app/api/student/desktop-sync/route.ts` para que o probe de autorização funcione. Nenhum deploy foi executado nesta fase.
+- O build do instalador NSIS, instalação limpa Windows e teste ponta a ponta com uma conta de teste permanecem pendentes; `desktop:build` valida o runtime standalone, não o instalador final.
+- A migration v2 é local e aplicada ao abrir o SQLite existente. Não há mudança no schema PostgreSQL nem nos contratos de sincronização de respostas.
+
+## Fase 1.3 — Homologação e preparação para distribuição — 29/10/2026
+
+### Auditoria e estado de publicação
+
+- Branch de trabalho confirmada: `codex/desktop-offline-phase1`, HEAD local `561254e`. O diretório de trabalho já continha alterações não commitadas da Fase 1.2 e um arquivo histórico não relacionado (`HISTORICO_ATIVIDADES_CODIGO_COMPLETO.txt`), que foi preservado e excluído do escopo desta implementação.
+- `main` local também aponta para `561254e`; a referência local `origin/main` continua em `d992c0f`. A consulta somente leitura `git ls-remote origin refs/heads/main` falhou por DNS indisponível neste ambiente, portanto não foi possível confirmar se a referência remota avançou nem identificar o commit atualmente implantado.
+- A consulta pública somente leitura ao endereço oficial `GET https://metalab.cafeflow.com.br/api/desktop/identity` respondeu com `application: metalab-pocket`, `capability: desktop-offline-sync` e `protocolVersion: 1`. Isto confirma a identidade pública neste momento, mas não revela o commit implantado e não prova que a ação nova `recover` ou a ação `authorize` da Fase 1.2 estejam publicadas.
+- O código continua compatível com a migration PostgreSQL `015_desktop_offline_sync.sql`: a recuperação reutiliza colunas existentes (`sync_token_hash`, `expires_at`, `class_id`, `revoked_at`) e não requer migration adicional. A migration 015 não foi reaplicada; não houve leitura/escrita de banco de produção.
+- Não foi feito push, deploy nem chamada autenticada ao backend de produção. A rota remota `recover` só foi exercitada no fixture HTTP local.
+
+### Política para respostas após sete dias
+
+- Decisão confirmada pelo usuário: o aluno precisa autenticar online novamente; o servidor verifica a identidade do aluno, a provisão original, a revogação e o vínculo com a turma antes de emitir autorização renovada. O servidor continua decidindo cada resposta no momento da sincronização, comparando a missão com o snapshot autorizado.
+- `POST /api/student/desktop-sync` agora aceita `{ action: "recover", provisionId }` apenas com sessão autenticada do aluno. Em transação PostgreSQL, bloqueia a provisão, confirma a matrícula na mesma turma, gira o hash do token e estende a validade por sete dias. Não altera snapshots, respostas, IDs idempotentes ou entregas acadêmicas.
+- No Desktop, o login online procura uma provisão com respostas pendentes bloqueadas por autorização ou ainda não sincronizadas de uma provisão expirada. Se a origem do servidor mudou, a operação para com erro claro e mantém as respostas locais. Se a recuperação remota falhar, não cria outra provisão por cima das respostas pendentes. Após sucesso, o SQLite atualiza os tokens cifrados, preserva `operation_id` e `provision_id`, e reabre para sincronização apenas itens `needs_auth`; conflitos e falhas definitivas permanecem separados.
+- Não há migration PostgreSQL nesta decisão. A operação é restrita ao aluno identificado pela sessão remota e não é exposta como operação privilegiada no shell Web.
+
+### Arquivos desta fase
+
+- `src/server/repository.ts`: renovação transacional da autorização para a mesma provisão e turma.
+- `src/app/api/student/desktop-sync/route.ts`: ação autenticada `recover`.
+- `src/app/api/desktop/connect/route.ts` e `src/server/desktop/store.ts`: recuperação no login, atualização cifrada e reativação segura da outbox bloqueada.
+- `scripts/desktop-flow-check.mjs`: cobertura simulada de operação pendente, reautenticação, rotação de token, preservação dos identificadores, confirmação e histórico.
+- `electron-builder.config.cjs`: origem e saída do empacotamento passaram a aceitar diretórios de validação locais restritos, sem substituir o instalador anterior; o runtime empacotado usa o mesmo diretório produzido por `desktop:build`.
+- `electron/main.cjs`: tentativa de diagnóstico local sanitizado para falhas de inicialização, sem tokens ou respostas.
+- A Fase 1.2 segue junto na branch local: `src/app/sincronizacao/**`, `src/app/api/desktop/sync/**`, `src/app/api/student/desktop-sync/route.ts`, `src/app/layout.tsx`, `src/components/AppShell.tsx`, `src/components/DesktopSyncCoordinator.tsx`, `src/app/missoes/ClassroomMissions.tsx`, `src/server/desktop/{auth,backend,store}.ts`, `scripts/desktop-flow-check.mjs` e esta documentação.
+
+### Testes e resultados
+
+- `npm run typecheck`: passou.
+- `npm test`: passou, 14 testes.
+- `npm run build`: passou; o build lista `/api/student/desktop-sync`, a Central `/sincronizacao` e as APIs locais de sincronização.
+- `METALAB_DESKTOP_DIST_DIR=.next-desktop-phase13 npm run desktop:build`: passou e gerou o runtime Next standalone isolado.
+- `METALAB_DESKTOP_DIST_DIR=.next-desktop-phase13 npm run desktop:test`: passou; o teste integrado usou apenas backend falso em loopback e SQLite temporário. Verificou persistência/reinício, concorrência, backoff, idempotência, autorização expirada, recuperação do mesmo provisionamento e sincronização da resposta sem duplicação.
+- `METALAB_DESKTOP_DIST_DIR=.next-desktop-phase13 METALAB_DESKTOP_RELEASE_DIR=dist/desktop/release-phase13 npm run desktop:dist:win`: passou e gerou `dist/desktop/release-phase13/MetaLab Pocket Setup 1.0.0.exe` (~201 MB), além do app `win-unpacked`. O pacote não possui assinatura digital; o empacotador informa que não há certificado configurado.
+- Uma instalação silenciosa anterior do NSIS em pasta temporária terminou com código 0; o executável instalado fechou logo após iniciar, sem criar chave de dados/SQLite ou responder em `/api/desktop/health`. Depois de gerar o artefato final, as tentativas de atualização/reinstalação silenciosa retornaram código 2, inclusive em uma pasta nova sem espaços. O arquivo `.exe` foi criado pelo empacotador, mas a instalação final não foi confirmada. O processo não produziu o novo arquivo local de diagnóstico e a inicialização não foi concluída; a causa permanece desconhecida. Não é válido classificar isto como teste de janela bem-sucedido.
+- A distribuição inclui `public/simulator` (incluindo assets e arquivos Three.js). A inspeção do runtime empacotado encontrou zero arquivos `.env*` e zero bancos `.sqlite`. Os recursos foram inspecionados, mas não exercitados na janela Desktop.
+- `git diff --check`: passou com avisos de conversão LF/CRLF do checkout.
+
+### Limites, impacto Web e rollback
+
+- **Estado da fase: parcial e bloqueada para distribuição.** O fluxo vertical foi validado contra backend simulado, não contra PostgreSQL real; a instalação completou, mas o app instalado não concluiu a inicialização neste ambiente. Permanecem sem teste: login com aluno de homologação, provisionamento real, entrega confirmada pelo servidor, reconexão real, preferências após atualização e encerramento normal do app.
+- Não há conta/aluno de teste autorizado fornecido para escrita. Nenhuma credencial ou resposta real foi transmitida. A validação de `/api/student/desktop-sync` no backend de produção deve ocorrer só depois de push/deploy autorizados e com conta/turma de homologação isoladas.
+- A Web compilou sem regressões observadas. O endpoint `recover` exige sessão remota de aluno e a origem same-origin existente; nenhuma interface ou regra acadêmica Web foi alterada.
+- As alterações permanecem na branch `codex/desktop-offline-phase1`. Rollback de código: reverter o commit desta branch quando preparado; não há migration remota a reverter. O instalador de validação está em `release-phase13` e o artefato anterior em `dist/desktop/release` foi preservado.
+- Próximo passo: diagnosticar a inicialização do Electron instalado no Windows, depois publicar backend e Desktop apenas com autorização explícita, e homologar usando aluno/turma de teste autorizados. Não iniciar outras fases antes dessa validação.

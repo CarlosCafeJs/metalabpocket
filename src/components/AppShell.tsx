@@ -6,6 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useStudentState } from '@/hooks/useStudentState';
+import DesktopSyncCoordinator from '@/components/DesktopSyncCoordinator';
 
 type AppShellProps = {
   children: ReactNode;
@@ -19,6 +20,7 @@ type AppShellProps = {
 
 const navigation = [
   { href: '/dashboard', label: 'Central', short: 'CE' },
+  { href: '/sincronizacao', label: 'Sincronização', short: 'SI' },
   { href: '/empresa', label: 'Minha Empresa', short: 'EM' },
   { href: '/turmas', label: 'Turmas', short: 'TU' },
   { href: '/missoes', label: 'Missões', short: 'MI' },
@@ -38,8 +40,9 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
   useEffect(() => {
     setHydrated(true);
     setDesktop(window.metaLabDesktop?.enabled === true);
+    if (pathname === '/sincronizacao' && window.metaLabDesktop?.enabled !== true) router.replace('/dashboard');
     if (!session.loading && session.authenticated === false) router.replace('/');
-    if (!session.loading && session.authenticated && window.metaLabDesktop?.enabled && pathname !== '/missoes') router.replace('/missoes');
+    if (!session.loading && session.authenticated && window.metaLabDesktop?.enabled && pathname !== '/missoes' && pathname !== '/sincronizacao') router.replace('/missoes');
     if (!session.loading && session.authenticated && session.enrolled === false && pathname !== '/turmas') router.replace('/turmas');
   }, [router, pathname, session.authenticated, session.enrolled, session.loading]);
 
@@ -56,6 +59,7 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
 
   return (
     <div className={`app-shell${immersive ? ' immersive-shell' : ''}${socialMode ? ' social-shell' : ''}`}>
+      <DesktopSyncCoordinator />
       <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
       {!needsClass && !socialMode && <aside className="app-sidebar" aria-label="Navegação principal">
         <Link className="shell-brand" href={desktop ? '/missoes' : '/dashboard'} aria-label="MetaLab Pocket — Central">
@@ -63,7 +67,7 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
           <span>POCKET</span>
         </Link>
         <nav className="shell-nav">
-          {navigation.filter(item => !desktop || item.href === '/missoes').map(item => {
+          {navigation.filter(item => item.href === '/sincronizacao' ? desktop : !desktop || item.href === '/missoes').map(item => {
             const active = hydrated && (pathname === item.href || (item.href === '/missoes' && pathname.startsWith('/missoes/')));
             return (
               <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
@@ -89,7 +93,7 @@ export function AppShell({ children, eyebrow, title, description, actions, immer
         </header>
 
         {!needsClass && !socialMode && <nav className="mobile-nav" aria-label="Navegação móvel">
-          {navigation.filter(item => !desktop || item.href === '/missoes').map(item => {
+          {navigation.filter(item => item.href === '/sincronizacao' ? desktop : !desktop || item.href === '/missoes').map(item => {
             const active = hydrated && (pathname === item.href || (item.href === '/missoes' && pathname.startsWith('/missoes/')));
             return <Link key={item.href} href={item.href} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>{item.label}</Link>;
           })}

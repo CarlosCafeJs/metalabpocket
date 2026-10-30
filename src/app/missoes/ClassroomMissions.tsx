@@ -46,27 +46,12 @@ export default function ClassroomMissions() {
       const firstModule=data.modules.find((item:CourseModule)=>item.id===selectedModuleId)||data.modules[0];
       setSelectedMissionId(current=>firstModule?.missions.some((item:CourseModule['missions'][number])=>item.id===current)?current:firstModule?.missions[0]?.id||'');
       setMessage(data.modules.length ? '' : 'O professor ainda não liberou módulos da turma.');
-      if (desktop && navigator.onLine) {
-        const sync = await fetch('/api/desktop/sync', { method: 'POST', credentials: 'same-origin' }).catch(() => null);
-        if (sync?.ok) {
-          const updated = await fetch('/api/desktop/classroom', { cache: 'no-store', credentials: 'same-origin' });
-          const refreshed = await updated.json().catch(() => null);
-          if (updated.ok && Array.isArray(refreshed?.modules)) setModules(refreshed.modules);
-        }
-      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao carregar.');
     }
   }, [desktop]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    if (!desktop) return;
-    const handleOnline = () => { void load(); };
-    window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
-  }, [desktop, load]);
-
   async function submit(event: FormEvent<HTMLFormElement>, mission: CourseModule['missions'][number]) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);

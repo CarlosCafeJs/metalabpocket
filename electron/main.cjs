@@ -1,7 +1,7 @@
 const { app, BrowserWindow, safeStorage, utilityProcess } = require('electron');
 const { randomBytes } = require('node:crypto');
 const { createServer } = require('node:net');
-const { mkdir, readFile, rename, writeFile } = require('node:fs/promises');
+const { appendFile, mkdir, readFile, rename, writeFile } = require('node:fs/promises');
 const path = require('node:path');
 
 const appDataFolder = 'MetaLab Pocket';
@@ -157,6 +157,16 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => app.quit());
 
 start().catch(error => {
-  console.error('MetaLab Pocket desktop startup failed:', error instanceof Error ? error.message : 'unexpected error');
-  app.quit();
+  const detail = error instanceof Error
+    ? `${error.name}: ${error.message}`.replace(/(https?:\/\/)[^/\s]+/gu, '$1[servidor]').replace(/[\r\n\t]+/gu, ' ').slice(0, 500)
+    : 'unexpected error';
+  console.error('MetaLab Pocket desktop startup failed:', detail);
+  void (async () => {
+    try {
+      const logPath = path.join(app.getPath('userData'), 'desktop-startup.log');
+      await mkdir(path.dirname(logPath), { recursive: true });
+      await appendFile(logPath, `${new Date().toISOString()} ${detail}\n`, 'utf8');
+    } catch { /* Diagnostics must not prevent a clean shutdown. */ }
+    app.quit();
+  })();
 });

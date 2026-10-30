@@ -198,6 +198,22 @@ export async function verifyMetaLabDesktopBackend(target: DesktopBackendTarget, 
   if (response.status !== 200 || !isMetaLabDesktopIdentity(identity)) throw new DesktopBackendError('incompatible');
 }
 
+export async function verifyDesktopSyncAuthorization(target: DesktopBackendTarget, syncToken: string): Promise<void> {
+  const response = await requestDesktopBackend(target, '/api/student/desktop-sync', {
+    method: 'POST', timeoutMs: 10_000,
+    headers: { Origin: target.origin, Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `DesktopSync ${syncToken}` },
+    body: JSON.stringify({ action: 'authorize' })
+  });
+  if (response.status === 401) throw new DesktopBackendError('remote_unauthorized');
+  if (response.status === 403) throw new DesktopBackendError('remote_forbidden');
+  if (response.status >= 500) throw new DesktopBackendError('remote_server_error');
+  let payload: unknown = null;
+  try { payload = JSON.parse(response.text) as unknown; } catch { /* incompatible response */ }
+  if (response.status !== 200 || !payload || typeof payload !== 'object' || (payload as Record<string, unknown>).authorized !== true) {
+    throw new DesktopBackendError('incompatible');
+  }
+}
+
 export type DesktopBackendResponse = { status: number; headers: import('node:http').IncomingHttpHeaders; text: string };
 
 export async function requestDesktopBackend(

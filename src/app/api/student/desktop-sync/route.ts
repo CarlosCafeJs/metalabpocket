@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { classroomMissionHash } from '@/domain/classroom-snapshot';
-import { applyDesktopMissionOperation, findEnrolledStudentBySessionToken, findStudentByDesktopSyncToken, getStudentClass, getPublishedClassroomMissionTasks, listClassroomForStudent } from '@/server/repository';
+import { applyDesktopMissionOperation, findEnrolledStudentBySessionToken, findStudentByDesktopSyncToken, getStudentClass, getPublishedClassroomMissionTasks, listClassroomForStudent, renewDesktopProvisionAfterStudentLogin } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { getPool } from '@/server/db';
 import { readJson, sameOrigin } from '@/server/validation';
@@ -13,6 +13,8 @@ export const dynamic = 'force-dynamic';
 const noStore = { 'Cache-Control': 'no-store' };
 const answerSchema = z.object({ taskId: z.string().uuid(), answer: z.union([z.string().max(2000), z.array(z.string().max(100)).max(12), z.boolean(), z.null()]) }).strict();
 const provisionSchema = z.object({ action: z.literal('provision') }).strict();
+const authorizeSchema = z.object({ action: z.literal('authorize') }).strict();
+const recoverSchema = z.object({ action: z.literal('recover'), provisionId: z.string().uuid() }).strict();
 const syncSchema = z.object({
   action: z.literal('sync'),
   operations: z.array(z.object({
@@ -46,6 +48,33 @@ export async function POST(request: NextRequest) {
         VALUES($1,$2,$3,$4,$5::jsonb,$6)
       `, [provisionId, student.id, classroom.id, syncTokenHash, JSON.stringify(hashes), expiresAt]);
       return NextResponse.json({ provisionId, syncToken, student: { id: student.id, displayName: student.displayName }, classId: classroom.id, expiresAt, modules, versions: hashes }, { headers: noStore });
+    }
+
+    const authorizationProbe = authorizeSchema.safeParse(body);
+    if (authorizationProbe.success) {
+      const authorization = request.headers.get('authorization') || '';
+      const match = authorization.match(/^DesktopSync ([A-Za-z0-9_-]{43})$/u);
+      const provisioned = match ? await findStudentByDesktopSyncToken(match[1]) : null;
+      if (!provisioned) return NextResponse.json({ authorized: false, error: 'Sessão ou autorização offline expirada.' }, { status: 401, headers: noStore });
+      const classroom = await getStudentClass(provisioned.student.id);
+      if (!classroom || classroom.id !== provisioned.classId) return NextResponse.json({ authorized: false, error: 'O vínculo com a turma foi removido.' }, { status: 403, headers: noStore });
+      return NextResponse.json({ authorized: true }, { headers: noStore });
+    }
+
+    const recoveryProbe = recoverSchema.safeParse(body);
+    if (recoveryProbe.success) {
+      const sessionToken = readSessionToken(request);
+      const student = sessionToken ? await findEnrolledStudentBySessionToken(sessionToken) : null;
+      if (!student) return NextResponse.json({ recovered: false, error: 'Entre em uma turma e entre online para recuperar respostas pendentes.' }, { status: 401, headers: noStore });
+      const syncToken = randomBytes(32).toString('base64url');
+      const renewed = await renewDesktopProvisionAfterStudentLogin({
+        provisionId: recoveryProbe.data.provisionId, studentId: student.id,
+        newTokenHash: createHash('sha256').update(syncToken, 'utf8').digest('hex')
+      });
+      if (!renewed) {
+        return NextResponse.json({ recovered: false, error: 'A turma ou autorização mudou. As respostas continuam salvas e precisam de análise do professor.' }, { status: 409, headers: noStore });
+      }
+      return NextResponse.json({ recovered: true, provisionId: recoveryProbe.data.provisionId, syncToken, classId: renewed.classId, expiresAt: renewed.expiresAt }, { headers: noStore });
     }
 
     const parsed = syncSchema.safeParse(body);
