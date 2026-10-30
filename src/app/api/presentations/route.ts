@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createBlankPresentationDocument } from '@/domain/presentations';
+import { createCanvaLessonDocument } from '@/domain/canva-lesson';
 import { hasTeacherSession } from '@/server/teacher-auth';
 import { findStudentBySessionToken, getStudentClass } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
@@ -45,17 +46,23 @@ export async function POST(request: NextRequest) {
   if (!hasTeacherSession(request)) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers });
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers });
   try {
-    const body = await readJson(request, 24 * 1024);
+    const body = await readJson(request, 2 * 1024 * 1024);
     const input = z.discriminatedUnion('action', [
       z.object({ action: z.literal('create'), title, classIds, isPublished: z.boolean().default(false) }).strict(),
+      z.object({ action: z.literal('create-canva-lesson'), classIds }).strict(),
       z.object({ action: z.literal('duplicate'), id: z.string().uuid(), title }).strict()
     ]).parse(body);
     if (input.action === 'duplicate') {
       const id = await duplicatePresentation(input.id, input.title);
       return id ? NextResponse.json({ id }, { status: 201, headers }) : NextResponse.json({ error: 'Apresentação não encontrada.' }, { status: 404, headers });
     }
-    if (input.isPublished && !input.classIds.length) return NextResponse.json({ error: 'Escolha ao menos uma turma antes de publicar.' }, { status: 400, headers });
-    const presentation = await createPresentation({ ...input, document: createBlankPresentationDocument() });
+    const isCanvaLesson = input.action === 'create-canva-lesson';
+    const lessonTitle = 'CANVA — Introdução ao Design e à Criação Visual';
+    const createInput = isCanvaLesson
+      ? { title: lessonTitle, classIds: input.classIds, isPublished: false, document: createCanvaLessonDocument() }
+      : { ...input, document: createBlankPresentationDocument() };
+    if (createInput.isPublished && !createInput.classIds.length) return NextResponse.json({ error: 'Escolha ao menos uma turma antes de publicar.' }, { status: 400, headers });
+    const presentation = await createPresentation(createInput);
     if (!presentation) return NextResponse.json({ error: 'Uma das turmas selecionadas não existe.' }, { status: 400, headers });
     return NextResponse.json({ presentation }, { status: 201, headers });
   } catch (error) {

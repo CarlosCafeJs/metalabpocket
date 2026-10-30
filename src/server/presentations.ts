@@ -86,9 +86,27 @@ export async function duplicatePresentation(id: string, title: string) {
   return transaction(async client => {
     const source = await client.query<{ document: unknown }>('SELECT document FROM metalab_presentations WHERE id=$1 AND deleted_at IS NULL', [id]);
     if (!source.rows[0]) return null;
-    const document = presentationDocumentSchema.parse(source.rows[0].document);
+    const sourceDocument = presentationDocumentSchema.parse(source.rows[0].document);
     const newId = randomUUID();
+    const assetIdMap = new Map<string, string>();
+    const copiedAssets: PresentationDocument['assets'] = [];
+    const assetsToCopy: Array<{ id: string; mime_type: 'image/jpeg' | 'image/png' | 'image/webp'; size_bytes: number; content: Buffer }> = [];
+    if (sourceDocument.assets.length) {
+      const assets = await client.query<{ id: string; mime_type: 'image/jpeg' | 'image/png' | 'image/webp'; size_bytes: number; content: Buffer }>(
+        'SELECT id,mime_type,size_bytes,content FROM metalab_presentation_assets WHERE presentation_id=$1', [id]);
+      for (const asset of assets.rows) {
+        const copiedId = randomUUID(); assetIdMap.set(asset.id, copiedId);
+        copiedAssets.push({ id: copiedId, mimeType: asset.mime_type, sizeBytes: asset.size_bytes });
+        assetsToCopy.push({ ...asset, id: copiedId });
+      }
+    }
+    const document: PresentationDocument = {
+      ...sourceDocument,
+      assets: copiedAssets,
+      slides: sourceDocument.slides.map(slide => ({ ...slide, elements: slide.elements.map(element => element.type === 'image' ? { ...element, assetId: assetIdMap.get(element.assetId) || element.assetId } : element) }))
+    };
     await client.query('INSERT INTO metalab_presentations(id,title,schema_version,document,revision,is_published) VALUES($1,$2,1,$3::jsonb,1,FALSE)', [newId,title,JSON.stringify(document)]);
+    for (const asset of assetsToCopy) await client.query('INSERT INTO metalab_presentation_assets(id,presentation_id,mime_type,size_bytes,content) VALUES($1,$2,$3,$4,$5)', [asset.id,newId,asset.mime_type,asset.size_bytes,asset.content]);
     await client.query('INSERT INTO metalab_presentation_versions(presentation_id,revision,title,document,is_published) VALUES($1,1,$2,$3::jsonb,FALSE)', [newId,title,JSON.stringify(document)]);
     return newId;
   });
@@ -111,6 +129,30 @@ export async function updatePresentation(input: { id: string; title: string; cla
     await client.query('INSERT INTO metalab_presentation_versions(presentation_id,revision,title,document,is_published) VALUES($1,$2,$3,$4::jsonb,$5)', [input.id,updated.rows[0].revision,input.title,JSON.stringify(updated.rows[0].document),input.isPublished]);
     await client.query(`DELETE FROM metalab_presentation_versions WHERE presentation_id=$1 AND revision NOT IN (SELECT revision FROM metalab_presentation_versions WHERE presentation_id=$1 ORDER BY revision DESC LIMIT 50)`, [input.id]);
     return { kind: 'updated' as const };
+  });
+}
+
+export async function updatePresentationDocument(input: { id: string; document: PresentationDocument; expectedRevision: number }) {
+  const document = presentationDocumentSchema.parse(input.document);
+  return transaction(async client => {
+    if (document.assets.length) {
+      const attached = await client.query<{ id: string }>('SELECT id FROM metalab_presentation_assets WHERE presentation_id=$1 AND id=ANY($2::uuid[])', [input.id, document.assets.map(asset => asset.id)]);
+      if (attached.rowCount !== document.assets.length) return { kind: 'missing-assets' as const };
+    }
+    const updated = await client.query<{ title: string; is_published: boolean; revision: number }>(`UPDATE metalab_presentations
+      SET document=$2::jsonb,schema_version=1,revision=revision+1,updated_at=NOW()
+      WHERE id=$1 AND deleted_at IS NULL AND revision=$3 RETURNING title,is_published,revision`,
+    [input.id, JSON.stringify(document), input.expectedRevision]);
+    if (!updated.rows[0]) {
+      const exists = await client.query('SELECT 1 FROM metalab_presentations WHERE id=$1 AND deleted_at IS NULL', [input.id]);
+      return { kind: exists.rowCount ? 'conflict' as const : 'missing' as const };
+    }
+    const row = updated.rows[0];
+    await client.query('INSERT INTO metalab_presentation_versions(presentation_id,revision,title,document,is_published) VALUES($1,$2,$3,$4::jsonb,$5)',
+      [input.id, row.revision, row.title, JSON.stringify(document), row.is_published]);
+    await client.query(`DELETE FROM metalab_presentation_versions WHERE presentation_id=$1 AND revision NOT IN
+      (SELECT revision FROM metalab_presentation_versions WHERE presentation_id=$1 ORDER BY revision DESC LIMIT 50)`, [input.id]);
+    return { kind: 'updated' as const, revision: row.revision };
   });
 }
 

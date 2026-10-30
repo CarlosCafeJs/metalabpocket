@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createBlankPresentationDocument, presentationDocumentSchema } from '../src/domain/presentations.ts';
+import { createCanvaLessonDocument } from '../src/domain/canva-lesson.ts';
+import { detectPresentationImageMime } from '../src/domain/presentation-image.ts';
 
 test('new presentation starts with a valid versioned 16:9 document and one slide', () => {
   const document = createBlankPresentationDocument();
@@ -24,4 +26,20 @@ test('image elements can only reference declared image assets', () => {
   assert.equal(presentationDocumentSchema.safeParse(missingAsset).success, false);
   const withAsset = { ...missingAsset, assets: [{ id: 'f7356b2a-a778-44ac-918a-eaa83144f85a', mimeType: 'image/png', sizeBytes: 512 }] };
   assert.equal(presentationDocumentSchema.safeParse(withAsset).success, true);
+});
+
+test('Canva beginner lesson is a valid editable 20-slide 16:9 document', () => {
+  const document = createCanvaLessonDocument();
+  assert.equal(document.slides.length, 20);
+  assert.equal(presentationDocumentSchema.safeParse(document).success, true);
+  assert.equal(document.slides[0].elements.some(element => element.type === 'text' && element.text.includes('Introdução ao design')), true);
+  assert.equal(document.slides[17].elements.some(element => element.type === 'text' && element.text.includes('Faça 4 páginas')), true);
+});
+
+test('image upload checks signatures instead of trusting the filename MIME', () => {
+  assert.equal(detectPresentationImageMime(Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10])), 'image/png');
+  assert.equal(detectPresentationImageMime(Uint8Array.from([255, 216, 255, 0])), 'image/jpeg');
+  assert.equal(detectPresentationImageMime(Uint8Array.from([82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80])), 'image/webp');
+  assert.equal(detectPresentationImageMime(Uint8Array.from([60, 115, 118, 103, 62])), null);
+  assert.equal(detectPresentationImageMime(Uint8Array.from([137, 80, 78])), null);
 });
