@@ -25,6 +25,7 @@ const navigation = [
   { href: '/turmas', label: 'Turmas', short: 'TU' },
   { href: '/missoes', label: 'Missões', short: 'MI' },
   { href: '/instalab', label: 'InstaLab', short: 'IL' },
+  { href: '/apresentacoes', label: 'Apresentações', short: 'AP' },
   { href: '/missoes-relampago', label: 'Missão Relâmpago', short: 'MR' },
   { href: '/entregas', label: 'Entregas', short: 'EN' },
   { href: '/celular', label: 'Celular', short: 'CL' }
