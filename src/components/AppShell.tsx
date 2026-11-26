@@ -24,6 +24,7 @@ const navigation = [
   { href: '/turmas', label: 'Minha Turma', short: 'TU' },
   { href: '/missoes', label: 'Missões', short: 'MI' },
   { href: '/instalab', label: 'InstaFlow', short: 'IF' },
+  { href: '/apresentacoes', label: 'Apresentações', short: 'AP' },
   { href: '/entregas', label: 'Entregas', short: 'EN' },
   { href: '/forum', label: 'Fórum', short: 'FO' }
 ];
