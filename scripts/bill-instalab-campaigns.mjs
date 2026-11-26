@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { checkServerIdentity } from 'node:tls';
 import nextEnv from '@next/env';
 
 nextEnv.loadEnvConfig(process.cwd());
@@ -6,8 +7,15 @@ const { Client } = pg;
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL_NOT_CONFIGURED');
 const ca = process.env.DATABASE_CA?.replace(/\\n/g, '\n');
-const allowInsecureLocalTls = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'false' && process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1';
-const ssl = process.env.DATABASE_SSL === 'false' ? false : { ...(ca ? { ca } : {}), rejectUnauthorized: !allowInsecureLocalTls };
+const servername = process.env.DATABASE_SSL_SERVERNAME?.trim();
+const ssl = {
+  ...(ca ? { ca } : {}),
+  ...(servername ? {
+    servername,
+    checkServerIdentity: (_hostname, certificate) => checkServerIdentity(servername, certificate)
+  } : {}),
+  rejectUnauthorized: true
+};
 const client = new Client({ connectionString, ssl, connectionTimeoutMillis: 10000 });
 let charged = 0;
 let stopped = 0;

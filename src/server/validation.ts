@@ -12,11 +12,29 @@ export const studentSchema = z.object({
   name: cleanText(120),
   email: z.email().max(254).transform(value => value.trim().toLowerCase()),
   birthDate: isoBirthDate,
-  photoSharingConsent: z.boolean().optional().default(true),
   website: z.string().max(0).optional().default('')
 }).strict();
 
-export const photoConsentSchema = z.object({ photoSharingConsent: z.boolean() }).strict();
+const normalizeCpfInput = (value: string) => value.replace(/\D/gu, '');
+const validCpf = (cpf: string) => {
+  if (!/^\d{11}$/u.test(cpf) || /^([0-9])\1{10}$/u.test(cpf)) return false;
+  const digit = (length: number) => {
+    const sum = cpf.slice(0, length).split('').reduce((total, value, index) => total + Number(value) * (length + 1 - index), 0);
+    const remainder = (sum * 10) % 11;
+    return remainder === 10 ? 0 : remainder;
+  };
+  return digit(9) === Number(cpf[9]) && digit(10) === Number(cpf[10]);
+};
+
+export const studentRegistrationSchema = studentSchema.extend({
+  cpf: z.string().trim().min(11).max(14).transform(normalizeCpfInput).refine(validCpf, 'CPF inválido'),
+  password: z.string().min(12).max(256)
+}).strict();
+
+export const studentLoginSchema = z.object({
+  identifier: z.string().trim().min(1).max(254),
+  password: z.string().min(1).max(256)
+}).strict();
 
 export const businessSchema = z.object({
   name: cleanText(100),

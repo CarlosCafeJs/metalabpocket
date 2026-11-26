@@ -1,34 +1,31 @@
 import 'server-only';
+import { checkServerIdentity } from 'node:tls';
 import { Pool, type PoolClient } from 'pg';
 
 declare global {
   // eslint-disable-next-line no-var
-  var metalabPool: Pool | undefined;
+  var eduCafePool: Pool | undefined;
 }
 
 function sslConfig() {
-  if (process.env.DATABASE_SSL === 'false') return false;
   const ca = process.env.DATABASE_CA?.replace(/\\n/g, '\n');
   const servername = process.env.DATABASE_SSL_SERVERNAME?.trim();
-  // Railway's stock public TCP proxy uses a self-signed certificate. This opt-in
-  // is for local development only; production and Vercel always verify TLS.
-  const allowInsecureLocalTls =
-    process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'false' &&
-    process.env.NODE_ENV !== 'production' &&
-    process.env.VERCEL !== '1';
-  const rejectUnauthorized = !allowInsecureLocalTls;
   return {
     ...(ca ? { ca } : {}),
-    ...(servername ? { servername } : {}),
-    rejectUnauthorized
+    ...(servername ? {
+      servername,
+      checkServerIdentity: (_hostname: string, certificate: Parameters<typeof checkServerIdentity>[1]) =>
+        checkServerIdentity(servername, certificate)
+    } : {}),
+    rejectUnauthorized: true
   };
 }
 
 export function getPool() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL_NOT_CONFIGURED');
-  if (!globalThis.metalabPool) {
-    globalThis.metalabPool = new Pool({
+  if (!globalThis.eduCafePool) {
+    globalThis.eduCafePool = new Pool({
       connectionString,
       max: 3,
       connectionTimeoutMillis: 7000,
@@ -36,7 +33,7 @@ export function getPool() {
       ssl: sslConfig()
     });
   }
-  return globalThis.metalabPool;
+  return globalThis.eduCafePool;
 }
 
 export async function transaction<T>(work: (client: PoolClient) => Promise<T>) {

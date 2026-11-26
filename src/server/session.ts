@@ -6,7 +6,7 @@ export const SESSION_COOKIE_NAME = 'metalab_session';
 const DEFAULT_SESSION_HOURS = 12;
 
 function sessionHours() {
-  const configured = Number.parseInt(process.env.METALAB_SESSION_HOURS || '', 10);
+  const configured = Number.parseInt(process.env.EDUCAFE_SESSION_HOURS || process.env.METALAB_SESSION_HOURS || '', 10);
   return Number.isFinite(configured) && configured >= 1 && configured <= 24
     ? configured
     : DEFAULT_SESSION_HOURS;

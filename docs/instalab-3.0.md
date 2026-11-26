@@ -1,5 +1,7 @@
 # InstaLab 3.0 — perfil, MetaCoins e anúncios
 
+> **Estado atual (26/11/2026):** as instruções abaixo descrevem o fluxo anterior. A autenticação docente por variáveis de ambiente foi removida; consulte `docs/edu-cafe-flow-consolidation.md` e `docs/edu-cafe-flow-teacher-accounts.md` para o estado atual. `METALAB_INSTALAB_ECONOMY_ADMIN_CPF` não está mais documentada como forma válida de conceder acesso administrativo.
+
 ## O que foi implementado
 
 - O perfil do aluno ganhou uma galeria de três colunas que mostra somente publicações que têm uma imagem salva. Publicações somente de texto continuam acessíveis em uma seção própria. O espaço vazio não usa conteúdo fictício.

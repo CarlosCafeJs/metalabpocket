@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findStudentBySessionToken, getStudentClass, revokeSession } from '@/server/repository';
-import { clearSessionCookie, readSessionToken } from '@/server/session';
-import { sameOrigin } from '@/server/validation';
+import { authenticateStudentWithPassword, findStudentBySessionToken, getStudentClass, revokeSession } from '@/server/repository';
+import { clearSessionCookie, readSessionToken, setSessionCookie } from '@/server/session';
+import { readJson, sameOrigin, studentLoginSchema } from '@/server/validation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,6 +29,28 @@ export async function GET(request: NextRequest) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';
     console.error(`session.read failed (${code})`);
     return json({ error: 'Não foi possível consultar a sessão agora.' }, 503);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  if (!sameOrigin(request)) return json({ error: 'Origem da solicitação não permitida.' }, 403);
+  try {
+    const parsed = studentLoginSchema.safeParse(await readJson(request, 4096));
+    if (!parsed.success) return json({ error: 'Informe seu CPF ou e-mail e a senha.' }, 400);
+    const result = await authenticateStudentWithPassword(parsed.data.identifier, parsed.data.password);
+    const response = json({ student: result.student });
+    setSessionCookie(response, result.token);
+    return response;
+  } catch (error) {
+    if (error instanceof Response) return new Response(error.body, { status: error.status, headers: { ...Object.fromEntries(error.headers), ...noStoreHeaders } });
+    if (error instanceof Error && error.message === 'STUDENT_AUTH_INVALID') return json({ error: 'CPF ou e-mail e senha não conferem.' }, 401);
+    if (error instanceof Error && error.message === 'STUDENT_CPF_PEPPER_NOT_CONFIGURED') {
+      console.error('session.login failed (STUDENT_CPF_PEPPER_NOT_CONFIGURED)');
+      return json({ error: 'O acesso seguro ainda não está configurado neste ambiente. Avise o responsável pelo sistema.' }, 503);
+    }
+    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';
+    console.error(`session.login failed (${code})`);
+    return json({ error: 'Não foi possível entrar agora. Tente novamente.' }, 503);
   }
 }
 

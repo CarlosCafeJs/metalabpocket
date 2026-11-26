@@ -38,8 +38,12 @@ const selectSummary = `
   LEFT JOIN metalab_classes classroom ON classroom.id=link.class_id
 `;
 
-export async function listTeacherPresentations(): Promise<PresentationSummary[]> {
-  const result = await getPool().query<PresentationRow>(`${selectSummary} WHERE presentation.deleted_at IS NULL GROUP BY presentation.id ORDER BY presentation.updated_at DESC`);
+export async function listTeacherPresentations(responsibleTeacherId?: string): Promise<PresentationSummary[]> {
+  const result = await getPool().query<PresentationRow>(`${selectSummary} WHERE presentation.deleted_at IS NULL
+    AND ($1::uuid IS NULL OR presentation.created_by=$1 OR (
+      EXISTS(SELECT 1 FROM metalab_presentation_classes own_link JOIN metalab_classes own_class ON own_class.id=own_link.class_id WHERE own_link.presentation_id=presentation.id AND own_class.responsible_teacher_id=$1)
+      AND NOT EXISTS(SELECT 1 FROM metalab_presentation_classes other_link JOIN metalab_classes other_class ON other_class.id=other_link.class_id WHERE other_link.presentation_id=presentation.id AND other_class.responsible_teacher_id IS DISTINCT FROM $1)
+    )) GROUP BY presentation.id ORDER BY presentation.updated_at DESC`, [responsibleTeacherId ?? null]);
   return result.rows.map(mapSummary);
 }
 
@@ -51,8 +55,12 @@ export async function listStudentPresentations(classId: string): Promise<Present
   return result.rows.map(mapSummary);
 }
 
-export async function getPresentation(id: string): Promise<(PresentationSummary & { document: PresentationDocument }) | null> {
-  const result = await getPool().query<PresentationRow>(`${selectSummary} WHERE presentation.id=$1 AND presentation.deleted_at IS NULL GROUP BY presentation.id`, [id]);
+export async function getPresentation(id: string, responsibleTeacherId?: string): Promise<(PresentationSummary & { document: PresentationDocument }) | null> {
+  const result = await getPool().query<PresentationRow>(`${selectSummary} WHERE presentation.id=$1 AND presentation.deleted_at IS NULL
+    AND ($2::uuid IS NULL OR presentation.created_by=$2 OR (
+      EXISTS(SELECT 1 FROM metalab_presentation_classes own_link JOIN metalab_classes own_class ON own_class.id=own_link.class_id WHERE own_link.presentation_id=presentation.id AND own_class.responsible_teacher_id=$2)
+      AND NOT EXISTS(SELECT 1 FROM metalab_presentation_classes other_link JOIN metalab_classes other_class ON other_class.id=other_link.class_id WHERE other_link.presentation_id=presentation.id AND other_class.responsible_teacher_id IS DISTINCT FROM $2)
+    )) GROUP BY presentation.id`, [id, responsibleTeacherId ?? null]);
   const row = result.rows[0];
   return row ? { ...mapSummary(row), document: presentationDocumentSchema.parse(row.document) } : null;
 }
@@ -66,42 +74,61 @@ export async function getStudentPresentation(id: string, classId: string) {
   return row ? { ...mapSummary(row), document: presentationDocumentSchema.parse(row.document) } : null;
 }
 
-export async function createPresentation(input: { title: string; document: PresentationDocument; classIds: string[]; isPublished: boolean }) {
+export async function createPresentation(input: { title: string; document: PresentationDocument; classIds: string[]; isPublished: boolean }, responsibleTeacherId?: string) {
   const id = randomUUID();
   const document = presentationDocumentSchema.parse(input.document);
   const created = await transaction(async client => {
     if (input.classIds.length) {
-      const classes = await client.query<{ id: string }>('SELECT id FROM metalab_classes WHERE id=ANY($1::uuid[])', [input.classIds]);
+      const classes = await client.query<{ id: string }>('SELECT id FROM metalab_classes WHERE id=ANY($1::uuid[]) AND ($2::uuid IS NULL OR responsible_teacher_id=$2)', [input.classIds,responsibleTeacherId??null]);
       if (classes.rowCount !== input.classIds.length) return null;
     }
-    await client.query(`INSERT INTO metalab_presentations(id,title,schema_version,document,revision,is_published) VALUES($1,$2,1,$3::jsonb,1,$4)`, [id, input.title, JSON.stringify(document), input.isPublished]);
+    await client.query(`INSERT INTO metalab_presentations(id,title,schema_version,document,revision,is_published,created_by) VALUES($1,$2,1,$3::jsonb,1,$4,$5)`, [id, input.title, JSON.stringify(document), input.isPublished,responsibleTeacherId??null]);
     for (const classId of input.classIds) await client.query('INSERT INTO metalab_presentation_classes(presentation_id,class_id) VALUES($1,$2)', [id,classId]);
     await client.query('INSERT INTO metalab_presentation_versions(presentation_id,revision,title,document,is_published) VALUES($1,1,$2,$3::jsonb,$4)', [id,input.title,JSON.stringify(document),input.isPublished]);
     return id;
   });
-  return created ? getPresentation(created) : null;
+  return created ? getPresentation(created,responsibleTeacherId) : null;
 }
 
-export async function duplicatePresentation(id: string, title: string) {
+export async function duplicatePresentation(id: string, title: string, responsibleTeacherId?: string) {
   return transaction(async client => {
-    const source = await client.query<{ document: unknown }>('SELECT document FROM metalab_presentations WHERE id=$1 AND deleted_at IS NULL', [id]);
+    const source = await client.query<{ document: unknown }>(`SELECT presentation.document FROM metalab_presentations presentation WHERE presentation.id=$1 AND presentation.deleted_at IS NULL AND
+      ($2::uuid IS NULL OR presentation.created_by=$2 OR (EXISTS(SELECT 1 FROM metalab_presentation_classes own_link JOIN metalab_classes own_class ON own_class.id=own_link.class_id WHERE own_link.presentation_id=presentation.id AND own_class.responsible_teacher_id=$2) AND NOT EXISTS(SELECT 1 FROM metalab_presentation_classes other_link JOIN metalab_classes other_class ON other_class.id=other_link.class_id WHERE other_link.presentation_id=presentation.id AND other_class.responsible_teacher_id IS DISTINCT FROM $2)))`, [id,responsibleTeacherId??null]);
     if (!source.rows[0]) return null;
-    const document = presentationDocumentSchema.parse(source.rows[0].document);
+    const sourceDocument = presentationDocumentSchema.parse(source.rows[0].document);
     const newId = randomUUID();
-    await client.query('INSERT INTO metalab_presentations(id,title,schema_version,document,revision,is_published) VALUES($1,$2,1,$3::jsonb,1,FALSE)', [newId,title,JSON.stringify(document)]);
+    const assetIdMap = new Map<string, string>();
+    const copiedAssets: PresentationDocument['assets'] = [];
+    const assetsToCopy: Array<{ id: string; mime_type: 'image/jpeg' | 'image/png' | 'image/webp'; size_bytes: number; content: Buffer }> = [];
+    if (sourceDocument.assets.length) {
+      const assets = await client.query<{ id: string; mime_type: 'image/jpeg' | 'image/png' | 'image/webp'; size_bytes: number; content: Buffer }>(
+        'SELECT id,mime_type,size_bytes,content FROM metalab_presentation_assets WHERE presentation_id=$1', [id]);
+      for (const asset of assets.rows) {
+        const copiedId = randomUUID(); assetIdMap.set(asset.id, copiedId);
+        copiedAssets.push({ id: copiedId, mimeType: asset.mime_type, sizeBytes: asset.size_bytes });
+        assetsToCopy.push({ ...asset, id: copiedId });
+      }
+    }
+    const document: PresentationDocument = {
+      ...sourceDocument,
+      assets: copiedAssets,
+      slides: sourceDocument.slides.map(slide => ({ ...slide, elements: slide.elements.map(element => element.type === 'image' ? { ...element, assetId: assetIdMap.get(element.assetId) || element.assetId } : element) }))
+    };
+    await client.query('INSERT INTO metalab_presentations(id,title,schema_version,document,revision,is_published,created_by) VALUES($1,$2,1,$3::jsonb,1,FALSE,$4)', [newId,title,JSON.stringify(document),responsibleTeacherId??null]);
+    for (const asset of assetsToCopy) await client.query('INSERT INTO metalab_presentation_assets(id,presentation_id,mime_type,size_bytes,content) VALUES($1,$2,$3,$4,$5)', [asset.id,newId,asset.mime_type,asset.size_bytes,asset.content]);
     await client.query('INSERT INTO metalab_presentation_versions(presentation_id,revision,title,document,is_published) VALUES($1,1,$2,$3::jsonb,FALSE)', [newId,title,JSON.stringify(document)]);
     return newId;
   });
 }
 
-export async function updatePresentation(input: { id: string; title: string; classIds: string[]; isPublished: boolean; expectedRevision: number }) {
+export async function updatePresentation(input: { id: string; title: string; classIds: string[]; isPublished: boolean; expectedRevision: number; responsibleTeacherId?: string }) {
   return transaction(async client => {
     if (input.classIds.length) {
-      const classes = await client.query<{ id: string }>('SELECT id FROM metalab_classes WHERE id=ANY($1::uuid[])', [input.classIds]);
+      const classes = await client.query<{ id: string }>('SELECT id FROM metalab_classes WHERE id=ANY($1::uuid[]) AND ($2::uuid IS NULL OR responsible_teacher_id=$2)', [input.classIds,input.responsibleTeacherId??null]);
       if (classes.rowCount !== input.classIds.length) return { kind: 'missing-class' as const };
     }
     const updated = await client.query<{ document: unknown; revision: number }>(`UPDATE metalab_presentations SET title=$2,is_published=$3,revision=revision+1,updated_at=NOW()
-      WHERE id=$1 AND deleted_at IS NULL AND revision=$4 RETURNING document,revision`, [input.id,input.title,input.isPublished,input.expectedRevision]);
+      WHERE id=$1 AND deleted_at IS NULL AND revision=$4 AND ($5::uuid IS NULL OR created_by=$5 OR (EXISTS(SELECT 1 FROM metalab_presentation_classes own_link JOIN metalab_classes own_class ON own_class.id=own_link.class_id WHERE own_link.presentation_id=metalab_presentations.id AND own_class.responsible_teacher_id=$5) AND NOT EXISTS(SELECT 1 FROM metalab_presentation_classes other_link JOIN metalab_classes other_class ON other_class.id=other_link.class_id WHERE other_link.presentation_id=metalab_presentations.id AND other_class.responsible_teacher_id IS DISTINCT FROM $5))) RETURNING document,revision`, [input.id,input.title,input.isPublished,input.expectedRevision,input.responsibleTeacherId??null]);
     if (!updated.rows[0]) {
       const exists = await client.query('SELECT 1 FROM metalab_presentations WHERE id=$1 AND deleted_at IS NULL', [input.id]);
       return { kind: exists.rowCount ? 'conflict' as const : 'missing' as const };
@@ -114,7 +141,31 @@ export async function updatePresentation(input: { id: string; title: string; cla
   });
 }
 
-export async function softDeletePresentation(id: string, expectedRevision: number) {
-  const result = await getPool().query(`UPDATE metalab_presentations SET deleted_at=NOW(),updated_at=NOW() WHERE id=$1 AND revision=$2 AND deleted_at IS NULL`, [id,expectedRevision]);
+export async function updatePresentationDocument(input: { id: string; document: PresentationDocument; expectedRevision: number; responsibleTeacherId?: string }) {
+  const document = presentationDocumentSchema.parse(input.document);
+  return transaction(async client => {
+    if (document.assets.length) {
+      const attached = await client.query<{ id: string }>('SELECT id FROM metalab_presentation_assets WHERE presentation_id=$1 AND id=ANY($2::uuid[])', [input.id, document.assets.map(asset => asset.id)]);
+      if (attached.rowCount !== document.assets.length) return { kind: 'missing-assets' as const };
+    }
+    const updated = await client.query<{ title: string; is_published: boolean; revision: number }>(`UPDATE metalab_presentations
+      SET document=$2::jsonb,schema_version=1,revision=revision+1,updated_at=NOW()
+      WHERE id=$1 AND deleted_at IS NULL AND revision=$3 AND ($4::uuid IS NULL OR created_by=$4 OR (EXISTS(SELECT 1 FROM metalab_presentation_classes own_link JOIN metalab_classes own_class ON own_class.id=own_link.class_id WHERE own_link.presentation_id=metalab_presentations.id AND own_class.responsible_teacher_id=$4) AND NOT EXISTS(SELECT 1 FROM metalab_presentation_classes other_link JOIN metalab_classes other_class ON other_class.id=other_link.class_id WHERE other_link.presentation_id=metalab_presentations.id AND other_class.responsible_teacher_id IS DISTINCT FROM $4))) RETURNING title,is_published,revision`,
+    [input.id, JSON.stringify(document), input.expectedRevision,input.responsibleTeacherId??null]);
+    if (!updated.rows[0]) {
+      const exists = await client.query('SELECT 1 FROM metalab_presentations WHERE id=$1 AND deleted_at IS NULL', [input.id]);
+      return { kind: exists.rowCount ? 'conflict' as const : 'missing' as const };
+    }
+    const row = updated.rows[0];
+    await client.query('INSERT INTO metalab_presentation_versions(presentation_id,revision,title,document,is_published) VALUES($1,$2,$3,$4::jsonb,$5)',
+      [input.id, row.revision, row.title, JSON.stringify(document), row.is_published]);
+    await client.query(`DELETE FROM metalab_presentation_versions WHERE presentation_id=$1 AND revision NOT IN
+      (SELECT revision FROM metalab_presentation_versions WHERE presentation_id=$1 ORDER BY revision DESC LIMIT 50)`, [input.id]);
+    return { kind: 'updated' as const, revision: row.revision };
+  });
+}
+
+export async function softDeletePresentation(id: string, expectedRevision: number, responsibleTeacherId?: string) {
+  const result = await getPool().query(`UPDATE metalab_presentations SET deleted_at=NOW(),updated_at=NOW() WHERE id=$1 AND revision=$2 AND deleted_at IS NULL AND ($3::uuid IS NULL OR created_by=$3 OR (EXISTS(SELECT 1 FROM metalab_presentation_classes own_link JOIN metalab_classes own_class ON own_class.id=own_link.class_id WHERE own_link.presentation_id=metalab_presentations.id AND own_class.responsible_teacher_id=$3) AND NOT EXISTS(SELECT 1 FROM metalab_presentation_classes other_link JOIN metalab_classes other_class ON other_class.id=other_link.class_id WHERE other_link.presentation_id=metalab_presentations.id AND other_class.responsible_teacher_id IS DISTINCT FROM $3)))`, [id,expectedRevision,responsibleTeacherId??null]);
   return result.rowCount === 1;
 }

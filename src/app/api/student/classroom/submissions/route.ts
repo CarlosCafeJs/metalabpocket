@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const body=await readJson(request,150000);
     if(body&&typeof body==='object'&&'missionId'in body){
       const input=missionSchema.parse(body);
-      const tasks=await getPublishedClassroomMissionTasks(input.missionId);
+      const tasks=await getPublishedClassroomMissionTasks(input.missionId,student.id);
       if(!tasks.length)return NextResponse.json({error:'Esta missão não está liberada ou ainda não tem perguntas.'},{status:404,headers:noStore});
       const validationError = validateClassroomMissionAnswers(tasks, input.answers);
       if (validationError) return NextResponse.json({ error: validationError }, { status: 400, headers: noStore });
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({submission},{status:201,headers:noStore});
     }
     const input = schema.parse(body);
-    const task = await getPublishedClassroomTask(input.taskId);
+    const task = await getPublishedClassroomTask(input.taskId,student.id);
     if (!task) return NextResponse.json({ error: 'Esta tarefa não está liberada.' }, { status: 404, headers: noStore });
     const empty = input.answer === null || input.answer === '' || (Array.isArray(input.answer) && input.answer.length === 0);
     const settings = task.settings || {};

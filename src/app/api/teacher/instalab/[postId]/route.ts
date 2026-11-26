@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteTeacherInstalabPost, listTeacherInstalabPosts, updateTeacherInstalabPost } from '@/server/repository';
 import { hasTeacherSession } from '@/server/teacher-auth';
+import { getTeacherAccountSession } from '@/server/teacher-accounts';
 import { sameOrigin } from '@/server/validation';
 import { z } from 'zod';
 import { containsPotentialSensitiveData } from '@/domain/mission-evaluation';
@@ -12,11 +13,13 @@ const noStore = { 'Cache-Control': 'no-store' };
 
 export async function DELETE(request: NextRequest, context: Context) {
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers: noStore });
-  if (!hasTeacherSession(request)) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers: noStore });
+  const legacy=hasTeacherSession(request); const account=legacy?null:await getTeacherAccountSession(request).catch(()=>null);
+  if (!legacy && !account) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers: noStore });
   const { postId } = await context.params;
   if (!z.string().uuid().safeParse(postId).success) return NextResponse.json({ error: 'Publicação não encontrada.' }, { status: 404, headers: noStore });
   try {
-    const deleted = await deleteTeacherInstalabPost(postId);
+    const owner=account?.role==='teacher'?account.id:undefined;
+    const deleted = await deleteTeacherInstalabPost(postId,owner);
     return deleted ? NextResponse.json({ deleted: true }, { headers: noStore }) : NextResponse.json({ error: 'Publicação não encontrada.' }, { status: 404, headers: noStore });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';
@@ -34,7 +37,8 @@ function validImage(mime: string, bytes: Buffer) {
 
 export async function PATCH(request: NextRequest, context: Context) {
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers: noStore });
-  if (!hasTeacherSession(request)) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers: noStore });
+  const legacy=hasTeacherSession(request); const account=legacy?null:await getTeacherAccountSession(request).catch(()=>null);
+  if (!legacy && !account) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers: noStore });
   const { postId } = await context.params;
   if (!z.string().uuid().safeParse(postId).success) return NextResponse.json({ error: 'Publicação não encontrada.' }, { status: 404, headers: noStore });
   if (Number(request.headers.get('content-length') || 0) > 4 * 1024 * 1024 + 32 * 1024) return NextResponse.json({ error: 'A imagem deve ter no máximo 4 MB.' }, { status: 413, headers: noStore });
@@ -50,9 +54,10 @@ export async function PATCH(request: NextRequest, context: Context) {
     if (file && (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024)) return NextResponse.json({ error: 'Escolha uma imagem JPG, PNG ou WebP de até 4 MB.' }, { status: 400, headers: noStore });
     const imageData = file ? Buffer.from(await file.arrayBuffer()) : null;
     if (file && imageData && !validImage(file.type, imageData)) return NextResponse.json({ error: 'O arquivo escolhido não é uma imagem válida.' }, { status: 415, headers: noStore });
-    const updated = await updateTeacherInstalabPost({ postId, body, imageName: file ? file.name.replace(/[\\/\u0000-\u001f]/gu, '_').slice(0, 255) : null, imageMimeType: file?.type || null, imageData, removeImage });
+    const responsibleTeacherId=account?.role==='teacher'?account.id:undefined;
+    const updated = await updateTeacherInstalabPost({ postId, body, imageName: file ? file.name.replace(/[\\/\u0000-\u001f]/gu, '_').slice(0, 255) : null, imageMimeType: file?.type || null, imageData, removeImage, responsibleTeacherId });
     if (!updated) return NextResponse.json({ error: 'Publicação não encontrada ou precisa manter texto ou imagem.' }, { status: 404, headers: noStore });
-    return NextResponse.json({ posts: await listTeacherInstalabPosts() }, { headers: noStore });
+    return NextResponse.json({ posts: await listTeacherInstalabPosts(responsibleTeacherId) }, { headers: noStore });
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: 'Confira os dados da publicação.' }, { status: 400, headers: noStore });
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';

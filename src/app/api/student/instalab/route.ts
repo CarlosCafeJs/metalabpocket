@@ -32,8 +32,7 @@ export async function GET(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'Parâmetros de paginação inválidos.' }, { status: 400, headers: noStore });
   try {
     const context = await getStudentBusinessAndClass(student.id);
-    if (!context?.classId) return NextResponse.json({ studentId: student.id, studentName: context?.studentFullName ?? student.displayName, businessName: context?.businessName ?? null, businessSegment: context?.businessSegment ?? null, businessDescription: context?.businessDescription ?? null, hasAvatar: context?.hasAvatar ?? false, class: null, business: Boolean(context?.businessId), posts: [], sponsored: null, total: 0, hasMore: false }, { headers: noStore });
-    if (!context.businessId) return NextResponse.json({ studentId: student.id, studentName: context.studentFullName, businessName: null, businessSegment: null, businessDescription: null, hasAvatar: context.hasAvatar, class: { id: context.classId, name: context.className }, business: false, posts: [], sponsored: null, total: 0, hasMore: false }, { headers: noStore });
+    if (!context?.classId) return NextResponse.json({ studentId: student.id, studentName: context?.studentFullName ?? student.displayName, businessName: context?.studentFullName ?? student.displayName, businessSegment: 'Perfil pessoal', businessDescription: null, hasAvatar: context?.hasAvatar ?? false, class: null, business: false, posts: [], sponsored: null, total: 0, hasMore: false }, { headers: noStore });
     const { limit, offset, scope } = parsed.data;
     const mineOnly = scope === 'mine';
     const [posts, total] = await Promise.all([
@@ -41,7 +40,7 @@ export async function GET(request: NextRequest) {
       countStudentInstalabPosts(student.id, mineOnly),
     ]);
     const sponsored = !mineOnly && offset === 0 ? await getStudentInstalabSponsoredAd(student.id) : null;
-    return NextResponse.json({ studentId: student.id, studentName: context.studentFullName, businessName: context.businessName, businessSegment: context.businessSegment, businessDescription: context.businessDescription, hasAvatar: context.hasAvatar, class: { id: context.classId, name: context.className }, business: true, posts, sponsored, total, hasMore: offset + posts.length < total }, { headers: noStore });
+    return NextResponse.json({ studentId: student.id, studentName: context.studentFullName, businessName: context.studentFullName, businessSegment: 'Perfil pessoal', businessDescription: null, hasAvatar: context.hasAvatar, class: { id: context.classId, name: context.className }, business: true, posts, sponsored, total, hasMore: offset + posts.length < total }, { headers: noStore });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';
     console.error(`student.instalab.read failed (${code})`);
@@ -59,8 +58,7 @@ export async function POST(request: NextRequest) {
   if (!z.string().uuid().safeParse(requestId).success) return NextResponse.json({ error: 'Identificador da publicação inválido. Atualize a página e tente novamente.' }, { status: 400, headers: noStore });
   try {
     const context = await getStudentBusinessAndClass(student.id);
-    if (!context?.businessId) return NextResponse.json({ error: 'Crie e salve sua empresa antes de publicar no InstaLab.' }, { status: 409, headers: noStore });
-    if (!context.classId) return NextResponse.json({ error: 'Entre em uma turma antes de publicar no InstaLab.' }, { status: 409, headers: noStore });
+    if (!context?.classId) return NextResponse.json({ error: 'Entre em uma turma antes de publicar no InstaFlow.' }, { status: 409, headers: noStore });
     if (!request.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data')) return NextResponse.json({ error: 'Envie a publicação pelo formulário.' }, { status: 415, headers: noStore });
     const form = await request.formData();
     const body = String(form.get('body') || '').trim();
@@ -79,13 +77,13 @@ export async function POST(request: NextRequest) {
       imageData,
       requestId
     });
-    if (!id) return NextResponse.json({ error: 'Não foi possível associar a publicação à sua turma e empresa.' }, { status: 409, headers: noStore });
+    if (!id) return NextResponse.json({ error: 'Não foi possível associar a publicação à sua turma.' }, { status: 409, headers: noStore });
     const { id: postId, reward, balance, duplicate } = id;
     const [posts, total] = await Promise.all([listStudentInstalabPosts(student.id, defaultPageSize, 0), countStudentInstalabPosts(student.id)]);
     return NextResponse.json({ id: postId, posts, total, hasMore: posts.length < total, reward, balance, duplicate }, { status: duplicate ? 200 : 201, headers: noStore });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';
     console.error(`student.instalab.create failed (${code})`);
-    return NextResponse.json({ error: 'Não foi possível publicar agora.' }, { status: 503, headers: noStore });
+    return NextResponse.json({ error: code==='23502'?'O InstaFlow pessoal depende da migration 020.':'Não foi possível publicar agora.' }, { status: 503, headers: noStore });
   }
 }

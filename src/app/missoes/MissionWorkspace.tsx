@@ -230,7 +230,6 @@ export default function MissionWorkspace() {
             <MissionRunner
               key={selectedMission.id}
               mission={selectedMission}
-              studentId={me?.student?.id}
               businessConfigured={hasBusiness(me?.business)}
               alreadyCompleted={completedIds.has(selectedMission.id)}
               onProgressChanged={registerProgress}

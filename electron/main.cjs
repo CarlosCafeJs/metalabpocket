@@ -1,14 +1,44 @@
-const { app, BrowserWindow, safeStorage, utilityProcess } = require('electron');
+const { app, BrowserWindow, dialog, safeStorage, utilityProcess } = require('electron');
 const { randomBytes } = require('node:crypto');
 const { createServer } = require('node:net');
-const { appendFile, mkdir, readFile, rename, writeFile } = require('node:fs/promises');
+const { appendFile, access, mkdir, readFile, rename, writeFile } = require('node:fs/promises');
 const path = require('node:path');
+const { classifyDiagnosticText, formatStartupEntry, getPackagedNodePath } = require('./startup-diagnostics.cjs');
 
 const appDataFolder = 'MetaLab Pocket';
 const startupTimeoutMs = 45_000;
 let serverProcess;
 let mainWindow;
 let shuttingDown = false;
+let startupStage = 'app-start';
+let startupLogQueue = Promise.resolve();
+
+function writeStartupLog(stage, code = 'none') {
+  startupLogQueue = startupLogQueue.then(async () => {
+    const logPath = path.join(app.getPath('userData'), 'desktop-startup.log');
+    await mkdir(path.dirname(logPath), { recursive: true });
+    await appendFile(logPath, formatStartupEntry(stage, code), 'utf8');
+  }).catch(() => {});
+  return startupLogQueue;
+}
+
+function logChildDiagnostic(chunk) {
+  const code = classifyDiagnosticText(String(chunk));
+  if (code !== 'unclassified') void writeStartupLog('next-runtime-output', code);
+}
+
+function classifyStartupError(error) {
+  const message = error instanceof Error ? error.message : '';
+  if (/armazenamento seguro|safeStorage/iu.test(message)) return 'secure_storage_unavailable';
+  if (/chave local/iu.test(message)) return 'secure_key_unavailable';
+  if (/servidor local.*tempo esperado/iu.test(message)) return 'readiness_timeout';
+  if (/servidor local foi encerrado/iu.test(message)) return 'next_exited_early';
+  return classifyDiagnosticText(message);
+}
+
+function serverNodeModulePath() {
+  return getPackagedNodePath(app.isPackaged, process.resourcesPath);
+}
 
 app.setName(appDataFolder);
 app.enableSandbox();
@@ -37,10 +67,10 @@ async function getDataKey() {
   }
   if (encryptedKey) {
     try {
-    const decrypted = await safeStorage.decryptStringAsync(encryptedKey);
-    const key = Buffer.from(decrypted.result, 'base64url');
-    if (key.byteLength !== 32) throw new Error('Chave local inválida.');
-    return key.toString('hex');
+      const decrypted = await safeStorage.decryptStringAsync(encryptedKey);
+      const key = Buffer.from(decrypted.result, 'base64url');
+      if (key.byteLength !== 32) throw new Error('Chave local inválida.');
+      return key.toString('hex');
     } catch {
       throw new Error('Não foi possível abrir a chave dos dados locais; nenhum dado foi substituído.');
     }
@@ -91,6 +121,7 @@ function desktopServerEnvironment(dataDirectory, dataKey, port) {
     NEXT_TELEMETRY_DISABLED: '1',
     HOSTNAME: '127.0.0.1',
     PORT: String(port),
+    ...(serverNodeModulePath() ? { NODE_PATH: serverNodeModulePath() } : {}),
     METALAB_DESKTOP_MODE: '1',
     METALAB_DESKTOP_DB_PATH: path.join(dataDirectory, 'metalab-offline.sqlite'),
     METALAB_DESKTOP_DATA_KEY: dataKey
@@ -104,7 +135,7 @@ function createMainWindow(url) {
     minWidth: 920,
     minHeight: 640,
     show: false,
-    backgroundColor: '#f7f3ed',
+    backgroundColor: '#F4F7F2',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -121,32 +152,62 @@ function createMainWindow(url) {
       if (new URL(target).origin !== localOrigin) event.preventDefault();
     } catch { event.preventDefault(); }
   });
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode) => {
+    void writeStartupLog('window-load-failed', `chromium_${Math.abs(Number(errorCode)) || 'unknown'}`);
+  });
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    const safeReason = /^[a-z0-9_-]{1,32}$/iu.test(details.reason) ? details.reason : 'unknown';
+    void writeStartupLog('window-render-exit', safeReason);
+  });
   mainWindow.once('ready-to-show', () => mainWindow && mainWindow.show());
+  mainWindow.once('ready-to-show', () => void writeStartupLog('window-ready'));
   mainWindow.loadURL(url);
 }
 
 async function start() {
   await app.whenReady();
+  startupStage = 'app-ready';
+  await writeStartupLog(startupStage);
+
+  startupStage = 'runtime-paths';
   const serverRoot = resolveServerRoot();
   const entry = path.join(serverRoot, 'server.js');
+  await access(entry);
+  await writeStartupLog('runtime-files-present');
+
+  startupStage = 'local-storage';
   const dataDirectory = path.join(app.getPath('userData'), 'offline');
   await mkdir(dataDirectory, { recursive: true });
   const dataKey = await getDataKey();
-  const port = await reserveLocalPort();
+  await writeStartupLog('secure-storage-ready');
 
+  startupStage = 'reserve-local-port';
+  const port = await reserveLocalPort();
+  await writeStartupLog('local-port-ready', `port_${port}`);
+
+  startupStage = 'spawn-next';
   serverProcess = utilityProcess.fork(entry, [], {
-    serviceName: 'MetaLab Pocket Next server',
+    serviceName: 'CaféFlow Pocket Next server',
     cwd: serverRoot,
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
     env: desktopServerEnvironment(dataDirectory, dataKey, port)
   });
+  serverProcess.on('spawn', () => void writeStartupLog('next-process-spawned'));
+  serverProcess.stdout?.on('data', logChildDiagnostic);
+  serverProcess.stderr?.on('data', logChildDiagnostic);
+  serverProcess.on('error', () => void writeStartupLog('next-process-error'));
   serverProcess.on('exit', code => {
     serverExited = true;
-    if (!shuttingDown) app.quit();
+    void writeStartupLog('next-process-exit', `exit_${Number.isInteger(code) ? code : 'unknown'}`).then(() => {
+      if (!shuttingDown && mainWindow && !mainWindow.isDestroyed()) app.quit();
+    });
   });
 
+  startupStage = 'next-readiness';
   const url = `http://127.0.0.1:${port}`;
   await waitForServer(url);
+  await writeStartupLog('next-health-ready');
+  startupStage = 'create-window';
   createMainWindow(url);
 }
 
@@ -157,16 +218,15 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => app.quit());
 
 start().catch(error => {
-  const detail = error instanceof Error
-    ? `${error.name}: ${error.message}`.replace(/(https?:\/\/)[^/\s]+/gu, '$1[servidor]').replace(/[\r\n\t]+/gu, ' ').slice(0, 500)
-    : 'unexpected error';
-  console.error('MetaLab Pocket desktop startup failed:', detail);
   void (async () => {
-    try {
-      const logPath = path.join(app.getPath('userData'), 'desktop-startup.log');
-      await mkdir(path.dirname(logPath), { recursive: true });
-      await appendFile(logPath, `${new Date().toISOString()} ${detail}\n`, 'utf8');
-    } catch { /* Diagnostics must not prevent a clean shutdown. */ }
+    const code = classifyStartupError(error);
+    await writeStartupLog(`failed-${startupStage}`, code);
+    if (app.isReady()) {
+      dialog.showErrorBox(
+        'Não foi possível iniciar o CaféFlow Pocket',
+        'O servidor local não concluiu a inicialização. Nenhum dado local foi removido. Consulte desktop-startup.log na pasta de dados do aplicativo e envie esse arquivo ao suporte.'
+      );
+    }
     app.quit();
   })();
 });

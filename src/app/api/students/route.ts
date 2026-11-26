@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createOrResumeStudentWithSession, findStudentBySessionToken } from '@/server/repository';
-import { readSessionToken, setSessionCookie } from '@/server/session';
-import { readJson, sameOrigin, studentSchema } from '@/server/validation';
+import { registerStudentAccountWithSession } from '@/server/repository';
+import { hashStudentCpf, hashStudentPassword } from '@/server/student-credentials';
+import { setSessionCookie } from '@/server/session';
+import { readJson, sameOrigin, studentRegistrationSchema } from '@/server/validation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const PRIVACY_NOTICE_VERSION = '2026-10-21-v2';
+const PRIVACY_NOTICE_VERSION = '2026-11-25-v1';
 const noStoreHeaders = { 'Cache-Control': 'no-store' };
 
 function json(body: unknown, status = 200) {
@@ -56,29 +57,32 @@ export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return json({ error: 'Origem da solicitação não permitida.' }, 403);
 
   try {
-    const currentToken = readSessionToken(request);
-    if (currentToken) {
-      const currentStudent = await findStudentBySessionToken(currentToken);
-      if (currentStudent) return json({ student: currentStudent, existing: true });
-    }
+    const parsed = studentRegistrationSchema.safeParse(await readJson(request, 8192));
+    if (!parsed.success) return json({ error: 'Confira nome, e-mail, CPF, data de nascimento e senha (mínimo de 12 caracteres).'}, 400);
 
-    const parsed = studentSchema.safeParse(await readJson(request, 4096));
-    if (!parsed.success) return json({ error: 'Confira nome, e-mail e data de nascimento.' }, 400);
-
-    const result = await createOrResumeStudentWithSession({
+    const [cpfDigest, passwordHash] = await Promise.all([
+      Promise.resolve(hashStudentCpf(parsed.data.cpf)),
+      hashStudentPassword(parsed.data.password)
+    ]);
+    const result = await registerStudentAccountWithSession({
       name: parsed.data.name,
       email: parsed.data.email,
       birthDate: parsed.data.birthDate,
+      cpfDigest,
+      passwordHash,
       privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
-      photoSharingConsent: parsed.data.photoSharingConsent
     });
-    const response = json({ student: result.student, resumed: result.resumed }, result.resumed ? 200 : 201);
+    const response = json({ student: result.student, created: true }, 201);
     setSessionCookie(response, result.token);
     return response;
   } catch (error) {
     if (error instanceof Response) return thrownResponse(error);
-    if (error instanceof Error && error.message === 'STUDENT_ARCHIVED') {
-      return json({ error: 'Este cadastro foi desativado pelo professor. Peça ao professor para restaurá-lo.' }, 403);
+    if (error instanceof Error && error.message === 'STUDENT_CREDENTIALS_ALREADY_REGISTERED') {
+      return json({ error: 'Já existe uma conta ativa com esse e-mail ou CPF. Entre com sua senha.' }, 409);
+    }
+    if (error instanceof Error && error.message === 'STUDENT_CPF_PEPPER_NOT_CONFIGURED') {
+      console.error('students.create failed (STUDENT_CPF_PEPPER_NOT_CONFIGURED)');
+      return json({ error: 'O cadastro seguro ainda não está configurado neste ambiente. Avise o responsável pelo sistema.' }, 503);
     }
     const code = classifyFailure(error);
     console.error(`students.create failed (${code})`);

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/server/db';
-import { hasTeacherSession } from '@/server/teacher-auth';
+import { hasTeacherOrAdminSession } from '@/server/teacher-auth';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest, context: { params: Promise<{ campaignId: string }> }) {
-  if (!hasTeacherSession(request)) return new NextResponse(null, { status: 401, headers: { 'Cache-Control': 'no-store' } });
+  if (!await hasTeacherOrAdminSession(request)) return new NextResponse(null, { status: 401, headers: { 'Cache-Control': 'no-store' } });
   try {
     const { campaignId } = await context.params;
     const result = await getPool().query<{ image_data: Buffer; image_mime_type: string }>('SELECT image_data,image_mime_type FROM metalab_instalab_campaigns WHERE id=$1 AND image_data IS NOT NULL', [campaignId]);

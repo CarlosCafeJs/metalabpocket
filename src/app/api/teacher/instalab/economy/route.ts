@@ -10,7 +10,7 @@ const noStore = { 'Cache-Control': 'no-store' };
 const ruleSchema = z.object({ timezoneName: z.string().trim().min(1).max(100), postReward: z.number().int().min(0).max(1000), likeReward: z.number().int().min(0).max(1000), commentReward: z.number().int().min(0).max(1000), dailyRewardCap: z.number().int().min(0).max(5000), dailyLikeRewardLimit: z.number().int().min(0).max(1000), dailyCommentRewardLimit: z.number().int().min(0).max(1000), adIntervalMinutes: z.literal(10), adIntervalCost: z.number().int().min(1).max(100000) }).strict();
 
 export async function GET(request: NextRequest) {
-  if (!isInstalabEconomyAdmin(request)) return NextResponse.json({ error: 'Somente o administrador autorizado pode alterar as regras da economia.' }, { status: 403, headers: noStore });
+  if (!await isInstalabEconomyAdmin(request)) return NextResponse.json({ error: 'Somente o administrador autorizado pode alterar as regras da economia.' }, { status: 403, headers: noStore });
   try {
     const result = await getPool().query(`SELECT timezone_name AS "timezoneName",post_reward AS "postReward",like_reward AS "likeReward",comment_reward AS "commentReward",daily_reward_cap AS "dailyRewardCap",daily_like_reward_limit AS "dailyLikeRewardLimit",daily_comment_reward_limit AS "dailyCommentRewardLimit",ad_interval_minutes AS "adIntervalMinutes",ad_interval_cost AS "adIntervalCost",updated_at AS "updatedAt" FROM metalab_instalab_economy_settings WHERE singleton=TRUE`);
     return NextResponse.json({ rules: result.rows[0] }, { headers: noStore });
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers: noStore });
-  if (!isInstalabEconomyAdmin(request)) return NextResponse.json({ error: 'Somente o administrador autorizado pode alterar as regras da economia.' }, { status: 403, headers: noStore });
+  if (!await isInstalabEconomyAdmin(request)) return NextResponse.json({ error: 'Somente o administrador autorizado pode alterar as regras da economia.' }, { status: 403, headers: noStore });
   const parsed = ruleSchema.safeParse(await readJson(request, 4096));
   if (!parsed.success) return NextResponse.json({ error: 'Confira os valores das regras.' }, { status: 400, headers: noStore });
   try { new Intl.DateTimeFormat('pt-BR', { timeZone: parsed.data.timezoneName }); }

@@ -23,7 +23,7 @@ export async function PUT(request: NextRequest) {
   if (!student) return NextResponse.json({ error: 'Sua sessão expirou.' }, { status: 401, headers: noStore });
   try {
     const context = await getStudentBusinessAndClass(student.id);
-    if (!context?.classId || !context.businessId) return NextResponse.json({ error: 'Entre em uma turma e cadastre sua empresa para editar o perfil.' }, { status: 409, headers: noStore });
+    if (!context?.classId) return NextResponse.json({ error: 'Entre em uma turma para editar seu perfil.' }, { status: 409, headers: noStore });
     if (!request.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data')) return NextResponse.json({ error: 'Envie uma imagem pelo formulário.' }, { status: 415, headers: noStore });
     const form = await request.formData();
     const file = form.get('image');

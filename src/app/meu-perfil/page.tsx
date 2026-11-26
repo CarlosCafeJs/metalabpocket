@@ -1,0 +1,22 @@
+'use client';
+
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { AppShell } from '@/components/AppShell';
+
+type Profile={id:string;fullName:string;email:string;bio:string;hasAvatar:boolean;class:{id:string;name:string;joinCode:string;responsibleTeacherName:string|null}|null};
+export default function StudentProfilePage(){
+  const[profile,setProfile]=useState<Profile|null>(null);const[bio,setBio]=useState('');const[image,setImage]=useState<File|null>(null);const[busy,setBusy]=useState(false);const[message,setMessage]=useState('Carregando seu perfil…');
+  async function load(){const response=await fetch('/api/student/profile',{cache:'no-store',credentials:'same-origin'});const data=await response.json();if(!response.ok)throw new Error(data.error||'Não foi possível carregar seu perfil.');setProfile(data.profile);setBio(data.profile.bio);setMessage('');}
+  useEffect(()=>{void load().catch(error=>setMessage(error.message));},[]);
+  async function saveBio(event:FormEvent){event.preventDefault();setBusy(true);setMessage('');try{const response=await fetch('/api/student/profile',{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({bio})});const result=await response.json();if(!response.ok)throw new Error(result.error||'Não foi possível salvar.');setMessage('Descrição atualizada.');}catch(error){setMessage(error instanceof Error?error.message:'Não foi possível salvar.');}finally{setBusy(false);}}
+  async function uploadAvatar(){if(!image)return;setBusy(true);setMessage('');try{const form=new FormData();form.set('image',image);const response=await fetch('/api/student/instalab/profile',{method:'PUT',credentials:'same-origin',body:form});const result=await response.json();if(!response.ok)throw new Error(result.error||'Não foi possível atualizar a foto.');setProfile(current=>current?{...current,hasAvatar:true}:current);setImage(null);setMessage('Foto do perfil atualizada.');}catch(error){setMessage(error instanceof Error?error.message:'Não foi possível atualizar a foto.');}finally{setBusy(false);}}
+  function chooseImage(event:ChangeEvent<HTMLInputElement>){setImage(event.target.files?.[0]||null);}
+  return <AppShell eyebrow="IDENTIDADE DO ALUNO" title="Meu Perfil" description="Sua identidade pessoal aparece no InstaFlow e nas conversas da turma.">
+    {profile?<div className="delivery-layout"><section className="delivery-form-card"><div className="delivery-card-heading"><span className="student-avatar student-profile-avatar">{profile.hasAvatar?<img src={`/api/instalab/avatar/${profile.id}?v=${profile.id}`} alt="Foto do perfil"/>:profile.fullName.charAt(0).toUpperCase()}</span><div><span className="teacher-kicker">PERFIL PESSOAL</span><h2>{profile.fullName}</h2></div></div>
+      <dl className="student-profile-details"><div><dt>E-mail</dt><dd>{profile.email}</dd></div><div><dt>Turma atual</dt><dd>{profile.class?.name||'Sem turma'}</dd></div><div><dt>Professor responsável</dt><dd>{profile.class?.responsibleTeacherName||'Professor não atribuído'}</dd></div></dl>
+      <label className="delivery-file-label">Foto de perfil <small>JPG, PNG ou WebP · até 2 MB</small><input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseImage}/></label>{image&&<button type="button" className="button button-primary" disabled={busy} onClick={()=>void uploadAvatar()}>{busy?'Enviando…':'Salvar foto'}</button>}
+      <form className="delivery-form" onSubmit={saveBio}><label>Sobre mim <small>Opcional · até 500 caracteres</small><textarea maxLength={500} rows={4} value={bio} onChange={event=>setBio(event.target.value)} placeholder="Conte algo que gostaria que seus colegas soubessem."/></label><button className="button button-primary" disabled={busy}>{busy?'Salvando…':'Salvar descrição'}</button></form>
+      <p className="delivery-message" role="status">{message}</p></section><aside className="delivery-list-card"><span className="section-tag">SUA COMUNIDADE</span><h2>Seu perfil acompanha você</h2><p>Seu nome e foto identificam suas publicações, curtidas, comentários e participações na turma. CPF e outros dados sensíveis não são exibidos.</p>{profile.class&&<Link className="button button-secondary" href="/turmas">Ver Minha Turma</Link>}<Link className="button button-secondary" href="/instalab">Abrir InstaFlow</Link></aside></div>:<p role="status">{message}</p>}
+  </AppShell>;
+}

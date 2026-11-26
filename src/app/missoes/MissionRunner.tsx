@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Mission } from '@/domain/curriculum';
 import {
   evaluateMission,
@@ -12,55 +12,12 @@ import {
   type MissionEvidence,
 } from '@/domain/mission-evaluation';
 
-type GalleryPhoto = {
-  id: string;
-  blob: Blob;
-  name?: string;
-  product?: string;
-  createdAt?: string;
-};
-
-type GalleryPreview = GalleryPhoto & { url: string };
-
 type MissionRunnerProps = {
   mission: Mission;
-  studentId?: string;
   businessConfigured: boolean;
   alreadyCompleted: boolean;
   onProgressChanged: (missionId: string, payload: unknown) => void;
 };
-
-function readGallery(studentId?: string): Promise<GalleryPhoto[]> {
-  return new Promise((resolve, reject) => {
-    if (!window.indexedDB) {
-      reject(new Error('Galeria local indisponível neste navegador.'));
-      return;
-    }
-
-    const openRequest = window.indexedDB.open(`metalab-pocket-gallery-${studentId || 'guest'}`, 1);
-    openRequest.onupgradeneeded = () => {
-      const database = openRequest.result;
-      if (!database.objectStoreNames.contains('photos')) {
-        database.createObjectStore('photos', { keyPath: 'id' });
-      }
-    };
-    openRequest.onerror = () => reject(openRequest.error || new Error('Não foi possível abrir a Galeria.'));
-    openRequest.onsuccess = () => {
-      const database = openRequest.result;
-      const transaction = database.transaction('photos', 'readonly');
-      const request = transaction.objectStore('photos').getAll();
-      request.onerror = () => reject(request.error || new Error('Não foi possível ler a Galeria.'));
-      request.onsuccess = () => {
-        const photos = (request.result as GalleryPhoto[]).sort((a, b) =>
-          String(b.createdAt || '').localeCompare(String(a.createdAt || '')),
-        );
-        resolve(photos);
-      };
-      transaction.oncomplete = () => database.close();
-      transaction.onerror = () => database.close();
-    };
-  });
-}
 
 function transportFor(mission: Mission, evidence: MissionEvidence) {
   if (mission.kind === 'checklist') {
@@ -75,12 +32,6 @@ function transportFor(mission: Mission, evidence: MissionEvidence) {
   }
   if (mission.kind === 'text') {
     return { answer: evidence.text || '', evidence: { length: (evidence.text || '').trim().length } };
-  }
-  if (mission.kind === 'gallery') {
-    return {
-      answer: evidence.photoCount ?? 0,
-      evidence: { photoCount: evidence.photoCount ?? 0, localOnly: true },
-    };
   }
   if (mission.kind === 'video') {
     const validVideo = Boolean(evidence.video
@@ -123,7 +74,6 @@ function serverCompleted(payload: unknown, fallback: boolean) {
 
 export default function MissionRunner({
   mission,
-  studentId,
   businessConfigured,
   alreadyCompleted,
   onProgressChanged,
@@ -132,26 +82,10 @@ export default function MissionRunner({
   const [choice, setChoice] = useState('');
   const [text, setText] = useState('');
   const [evaluation, setEvaluation] = useState<MissionEvaluation | null>(null);
-  const [gallery, setGallery] = useState<GalleryPreview[]>([]);
-  const [galleryState, setGalleryState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  const [galleryMessage, setGalleryMessage] = useState('');
   const [video, setVideo] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
-
-  const refreshGallery = useCallback(async () => {
-    setGalleryState('loading');
-    setGalleryMessage('');
-    try {
-      const photos = await readGallery(studentId);
-      setGallery(photos.map(photo => ({ ...photo, url: URL.createObjectURL(photo.blob) })));
-      setGalleryState('ready');
-    } catch (error) {
-      setGalleryState('error');
-      setGalleryMessage(error instanceof Error ? error.message : 'Não foi possível consultar a Galeria.');
-    }
-  }, [studentId]);
 
   useEffect(() => {
     setChecks(Array(mission.instructions.length).fill(false));
@@ -164,13 +98,7 @@ export default function MissionRunner({
       if (current) URL.revokeObjectURL(current);
       return '';
     });
-    if (mission.kind === 'gallery') void refreshGallery();
-    else setGallery([]);
-  }, [mission, refreshGallery]);
-
-  useEffect(() => () => {
-    gallery.forEach(photo => URL.revokeObjectURL(photo.url));
-  }, [gallery]);
+  }, [mission]);
 
   useEffect(() => () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
@@ -181,9 +109,8 @@ export default function MissionRunner({
     choice,
     text,
     businessConfigured,
-    photoCount: gallery.length,
     video: video ? { name: video.name, type: video.type, size: video.size } : null,
-  }), [businessConfigured, checks, choice, gallery.length, text, video]);
+  }), [businessConfigured, checks, choice, text, video]);
 
   const submitAttempt = async () => {
     const localResult = evaluateMission(mission, evidence);
@@ -339,30 +266,6 @@ export default function MissionRunner({
           </div>
         )}
 
-        {mission.kind === 'gallery' && (
-          <div className="mission-gallery-check">
-            <div className="mission-connected-state">
-              <strong>{galleryState === 'loading' ? 'Consultando a Galeria…' : `${gallery.length} foto${gallery.length === 1 ? '' : 's'} encontrada${gallery.length === 1 ? '' : 's'}`}</strong>
-              <p>As imagens são lidas do armazenamento local deste navegador e não são enviadas.</p>
-              {galleryMessage && <p role="alert">{galleryMessage}</p>}
-              <div className="mission-inline-actions">
-                <Link className="mission-link" href="/celular">Abrir o celular e tocar em Câmera</Link>
-                <button type="button" className="mission-secondary-button" onClick={() => void refreshGallery()}>Atualizar Galeria</button>
-              </div>
-            </div>
-            {gallery.length > 0 && (
-              <div className="mission-gallery-preview" aria-label="Fotos mais recentes da Galeria">
-                {gallery.slice(0, 3).map(photo => (
-                  <figure key={photo.id}>
-                    <img src={photo.url} alt={photo.product || photo.name || 'Foto do produto na Câmera'} />
-                    <figcaption>{photo.product || photo.name || 'Foto do produto'}</figcaption>
-                  </figure>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
         {mission.kind === 'video' && (
           <div className="mission-video-picker">
             <label className="mission-file-label" htmlFor={`video-${mission.id}`}>Escolher vídeo do computador</label>
@@ -388,7 +291,7 @@ export default function MissionRunner({
         )}
 
         <div className="mission-submit-row">
-          <button type="button" className="mission-primary-button" onClick={() => void submitAttempt()} disabled={saving || galleryState === 'loading'}>
+          <button type="button" className="mission-primary-button" onClick={() => void submitAttempt()} disabled={saving}>
             {saving ? 'Registrando…' : alreadyCompleted ? 'Refazer e conferir' : 'Conferir minha atividade'}
           </button>
         </div>

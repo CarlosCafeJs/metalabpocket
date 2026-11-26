@@ -63,10 +63,6 @@ async function evaluateMission(
     case 'business':
       completed = Boolean(await getBusiness(studentId));
       break;
-    case 'gallery':
-      completed = typeof evidence.photoCount === 'number'
-        && evidence.photoCount >= (mission.requiredPhotos || 1);
-      break;
     case 'video':
       completed = evidence.validVideo === true
         && ['video/mp4', 'video/webm'].includes(String(evidence.mimeType || ''))

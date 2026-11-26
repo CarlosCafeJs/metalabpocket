@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
         results.push({ operationId: operation.operationId, state: 'conflict' });
         continue;
       }
-      const tasks = await getPublishedClassroomMissionTasks(operation.missionId);
+      const tasks = await getPublishedClassroomMissionTasks(operation.missionId, student.id);
       const validationError = validateClassroomMissionAnswers(tasks, operation.answers);
       if (validationError) {
         results.push({ operationId: operation.operationId, state: 'invalid', error: validationError });

@@ -1,103 +1,18 @@
 'use client';
 
+import { useCallback,useEffect,useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
-import { allMissions, courseModules } from '@/domain/curriculum';
-import { useStudentState } from '@/hooks/useStudentState';
-
-export default function DashboardPage() {
-  const { student, business, progress } = useStudentState();
-  const completed = Math.max(0, Math.min(progress?.completedMissions ?? 0, allMissions.length));
-  const total = progress?.totalMissions || allMissions.length;
-  const percentage = Math.round((completed / Math.max(total, 1)) * 100);
-  const nextMission = allMissions.find(mission => mission.id === progress?.currentMissionId)
-    || allMissions.find(mission => !progress?.completedMissionIds?.includes(mission.id));
-  const currentModule = courseModules.find(module => module.id === (nextMission?.module || courseModules.at(-1)?.id)) || courseModules[0];
-  const achievements = progress?.achievements || [];
-
-  return (
-    <AppShell>
-      <section className="dashboard-hero">
-        <div className="dashboard-intro">
-          <span className="section-tag light">CENTRAL DE APRENDIZAGEM</span>
-          <p className="dashboard-greeting">Olá, {student?.displayName || 'estudante'}.</p>
-          <h1>Qual é a sua<br /><em>próxima atividade?</em></h1>
-          <p>Continue de onde parou. Cada missão prepara algo que será usado no seu Kit Digital.</p>
-        </div>
-        <div className="dashboard-progress" aria-label={`${percentage}% da formação concluída`}>
-          <div className="progress-orbit" style={{ '--progress': `${percentage * 3.6}deg` } as React.CSSProperties}>
-            <div><strong>{percentage}%</strong><span>concluído</span></div>
-          </div>
-          <p><strong>{completed} de {total}</strong> missões concluídas</p>
-          <small>FORMAÇÃO DE 20 HORAS</small>
-        </div>
-      </section>
-
-      <section className="dashboard-grid">
-        <article className="next-mission-card">
-          <div className="card-topline"><span>{nextMission ? 'PRÓXIMA MISSÃO' : 'FORMAÇÃO CONCLUÍDA'}</span><em>MÓDULO {currentModule.id} · {currentModule.duration}</em></div>
-          <div className="mission-number" aria-hidden="true">{nextMission ? String(nextMission.order).padStart(2, '0') : '✓'}</div>
-          <div className="mission-copy">
-            <p>{currentModule.title}</p>
-            <h2>{nextMission?.title || 'Você concluiu as 20 horas de formação.'}</h2>
-            <span>{nextMission?.objective || 'Revise seu Kit Digital ou repita uma atividade para continuar praticando.'}</span>
-            <Link className="button button-primary" href={nextMission ? '/missoes' : '/celular'}>
-              {nextMission ? 'Continuar missão' : 'Abrir o celular'} <span aria-hidden="true">→</span>
-            </Link>
-          </div>
-        </article>
-
-        <aside className="dashboard-side">
-          <article className="business-summary-card">
-            <span className="section-tag">MEU CONTEXTO</span>
-            <div className="business-mark" style={{ background: business?.primaryColor || '#D98B08' }}>{business?.name?.charAt(0) || '+'}</div>
-            <h2>{business?.name || 'Configure sua empresa'}</h2>
-            <p>{business ? `${business.segment} · ${business.mainOffering}` : 'Conte sobre o negócio que acompanhará suas atividades.'}</p>
-            <Link href="/empresa">{business ? 'Revisar dados' : 'Começar configuração'} <span aria-hidden="true">→</span></Link>
-          </article>
-          <article className="last-activity-card">
-            <span className="section-tag">ÚLTIMA ATIVIDADE</span>
-            <strong>{progress?.lastActivity || 'Entrada no MetaLab Pocket'}</strong>
-            <small>Seu progresso é salvo ao concluir cada missão.</small>
-          </article>
-        </aside>
-      </section>
-
-      <section className="section-block">
-        <div className="section-heading"><div><span className="section-tag">SUA TRILHA</span><h2>5 módulos que constroem um projeto.</h2></div><Link href="/missoes">Ver todas as missões →</Link></div>
-        <div className="module-grid">
-          {courseModules.map(module => {
-            const completedMissionIds = new Set(progress?.completedMissionIds || []);
-            const moduleDone = module.missions.filter(mission => completedMissionIds.has(mission.id)).length;
-            const active = module.id === currentModule.id;
-            return (
-              <article key={module.id} className={`module-card ${active ? 'active' : ''}`}>
-                <div className="module-index"><span>{String(module.id).padStart(2, '0')}</span><em>{module.duration}</em></div>
-                <h3>{module.title}</h3>
-                <p>{module.subtitle}</p>
-                <div className="mini-progress" aria-label={`${moduleDone} de ${module.missions.length} missões`}><i style={{ width: `${(moduleDone / module.missions.length) * 100}%` }} /></div>
-                <small>{moduleDone}/{module.missions.length} missões</small>
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="section-block achievements-section">
-        <div className="section-heading"><div><span className="section-tag">CONQUISTAS</span><h2>Marcos da sua jornada.</h2></div></div>
-        <div className="achievement-row">
-          {[
-            ['Primeiro passo', 'Entrar e conhecer a plataforma', completed > 0 || Boolean(student)],
-            ['Negócio em foco', 'Configurar o contexto da empresa', Boolean(business)],
-            ['Olhar de vitrine', 'Concluir as fotos do produto', Boolean(achievements.includes('Olhar de vitrine'))]
-          ].map(([title, description, unlocked]) => (
-            <article key={String(title)} className={unlocked || achievements.includes(String(title)) ? 'unlocked' : ''}>
-              <span aria-hidden="true">{unlocked || achievements.includes(String(title)) ? '✦' : '○'}</span>
-              <div><strong>{title}</strong><small>{description}</small></div>
-            </article>
-          ))}
-        </div>
-      </section>
-    </AppShell>
-  );
+type Central={student:{id:string;displayName:string};classroom:{id:string;name:string;joinCode:string;responsibleTeacherName?:string|null}|null;stats:{availableMissions:number;pendingMissions:number;completedMissions:number};latestDeliveries:Array<{id:string;activityName:string;createdAt:string;missionTitle:string|null;quickMissionTitle?:string|null}>;updates:Array<{id:string;title:string;moduleTitle:string;createdAt:string|null}>};
+const time=(value:string)=>new Intl.DateTimeFormat('pt-BR',{dateStyle:'medium',timeStyle:'short',timeZone:'America/Sao_Paulo'}).format(new Date(value));
+export default function DashboardPage(){const[data,setData]=useState<Central|null>(null);const[message,setMessage]=useState('Carregando sua Central…');const load=useCallback(async()=>{try{const response=await fetch('/api/student/central',{cache:'no-store',credentials:'same-origin'});const result=await response.json();if(!response.ok)throw new Error(result.error||'Não foi possível carregar sua Central.');setData(result);setMessage('');}catch(error){setMessage(error instanceof Error?error.message:'Não foi possível carregar sua Central.');}},[]);useEffect(()=>{void load();},[load]);
+  return <AppShell eyebrow="SEU ESPAÇO DE APRENDIZAGEM" title="Central" description="Acompanhe suas atividades, entregas e conversas com a turma.">
+    {message&&<p className="inline-notice" role="status">{message}</p>}{data&&<>
+      <section className="dashboard-hero"><div className="dashboard-intro"><span className="section-tag light">BEM-VINDA(O) DE VOLTA</span><p className="dashboard-greeting">Olá, {data.student.displayName}.</p><h1>Seu próximo passo<br/><em>começa aqui.</em></h1><p>Veja o que está acontecendo na sua turma e continue sua jornada.</p></div><div className="dashboard-progress"><div><strong>{data.stats.pendingMissions}</strong><span>missões pendentes</span></div><p>{data.stats.availableMissions} disponíveis · {data.stats.completedMissions} concluídas</p></div></section>
+      <section className="dashboard-grid"><article className="business-summary-card"><span className="section-tag">MINHA TURMA</span><h2>{data.classroom?.name||'Você ainda não participa de uma turma'}</h2><p>{data.classroom?`Professor responsável: ${data.classroom.responsibleTeacherName||'Professor não atribuído'}`:'Peça o código ao professor para acessar suas atividades.'}</p><Link href="/turmas">{data.classroom?'Ver Minha Turma':'Entrar com código'} <span aria-hidden="true">→</span></Link></article>
+        <article className="last-activity-card"><span className="section-tag">MISSÕES</span><strong>{data.stats.availableMissions?`${data.stats.pendingMissions} pendentes de ${data.stats.availableMissions}`:'Nenhuma missão publicada'}</strong><small>Atividades disponibilizadas pelo professor da sua turma.</small><Link href="/missoes">Abrir Missões <span aria-hidden="true">→</span></Link></article></section>
+      <section className="section-block"><div className="section-heading"><div><span className="section-tag">ATALHOS</span><h2>O que você quer fazer?</h2></div></div><div className="module-grid">{[['Meu Perfil','/meu-perfil','Atualize sua identificação e foto.'],['InstaFlow','/instalab','Compartilhe ideias e interaja com colegas.'],['Entregas','/entregas','Envie seus trabalhos em texto ou arquivo.'],['Fórum','/forum','Converse e tire dúvidas da turma.']].map(([label,href,copy])=><Link className="module-card" href={href} key={href}><h3>{label}</h3><p>{copy}</p><span>Acessar →</span></Link>)}</div></section>
+      <section className="section-block"><div className="section-heading"><div><span className="section-tag">ATIVIDADE RECENTE</span><h2>Últimas entregas</h2></div><Link href="/entregas">Ver histórico →</Link></div>{data.latestDeliveries.length?<div className="delivery-items">{data.latestDeliveries.map(item=><article className="delivery-item" key={item.id}><span className="section-tag">{time(item.createdAt)}</span><h3>{item.missionTitle||item.quickMissionTitle||item.activityName}</h3></article>)}</div>:<p>Suas entregas aparecerão aqui depois do primeiro envio.</p>}</section>
+      <section className="section-block"><div className="section-heading"><div><span className="section-tag">MISSÕES PUBLICADAS</span><h2>Novidades da turma</h2></div><Link href="/missoes">Ver todas →</Link></div>{data.updates.length?<div className="delivery-items">{data.updates.map(item=><article className="delivery-item" key={item.id}><small>{item.moduleTitle}</small><h3>{item.title}</h3></article>)}</div>:<p>Quando o professor publicar uma missão, ela aparecerá aqui.</p>}</section>
+    </>}</AppShell>;
 }

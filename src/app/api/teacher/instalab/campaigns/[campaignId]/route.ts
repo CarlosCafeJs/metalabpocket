@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { transaction } from '@/server/db';
-import { hasTeacherSession } from '@/server/teacher-auth';
+import { hasTeacherOrAdminSession } from '@/server/teacher-auth';
 import { readJson, sameOrigin } from '@/server/validation';
 
 export const runtime = 'nodejs';
@@ -11,7 +11,7 @@ const actionSchema = z.object({ action: z.enum(['approve', 'reject', 'suspend', 
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ campaignId: string }> }) {
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers: noStore });
-  if (!hasTeacherSession(request)) return NextResponse.json({ error: 'Acesso do professor necessário.' }, { status: 401, headers: noStore });
+  if (!await hasTeacherOrAdminSession(request)) return NextResponse.json({ error: 'Acesso do professor necessário.' }, { status: 401, headers: noStore });
   const { campaignId } = await context.params;
   if (!z.string().uuid().safeParse(campaignId).success) return NextResponse.json({ error: 'Anúncio inválido.' }, { status: 400, headers: noStore });
   const parsed = actionSchema.safeParse(await readJson(request, 2048));

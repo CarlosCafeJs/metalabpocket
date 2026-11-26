@@ -31,6 +31,7 @@ const standaloneDist = path.join(standalone, desktopDistDir);
 await mkdir(standaloneDist, { recursive: true });
 await cp(path.join(output, 'static'), path.join(standaloneDist, 'static'), { recursive: true, force: true });
 await cp(path.join(root, 'public'), path.join(standalone, 'public'), { recursive: true, force: true });
+await cp(path.join(standalone, 'node_modules'), path.join(standalone, 'server-dependencies'), { recursive: true, force: true });
 async function removeEnvironmentFiles(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const target = path.join(directory, entry.name);

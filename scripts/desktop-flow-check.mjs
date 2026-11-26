@@ -68,6 +68,11 @@ test('desktop offline mission survives restart and sync retries do not duplicate
       response.setHeader('Set-Cookie', `metalab_session=${token}; Path=/; HttpOnly; SameSite=Lax`);
       response.end(JSON.stringify({ student: { id: studentId, displayName: 'Aluna Teste' } })); return;
     }
+    if (request.url === '/api/session' && request.method === 'POST') {
+      loginRequests++;
+      response.setHeader('Set-Cookie', `metalab_session=${token}; Path=/; HttpOnly; SameSite=Lax`);
+      response.end(JSON.stringify({ student: { id: studentId, displayName: 'Aluna Teste' } })); return;
+    }
     if (request.url === '/api/teacher/session' && request.method === 'POST') {
       teacherLoginRequests++;
       if (!teacherLoginAccepted) { response.statusCode = 401; response.end(JSON.stringify({ error: 'Unauthorized' })); return; }
@@ -145,7 +150,7 @@ test('desktop offline mission survives restart and sync retries do not duplicate
   assert.equal(teacherLoginRequests, 1, 'settings authorization goes through the isolated mock backend');
   const connectStartIndex = backendPaths.length;
   const connected = await fetch(`${localUrl}/api/desktop/connect`, { method: 'POST', headers: { Origin: localOrigin, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'Aluna Teste', email: 'aluna@example.com', birthDate: '2000-01-01', website: '', photoSharingConsent: true }) });
+    body: JSON.stringify({ action: 'register', name: 'Aluna Teste', email: 'aluna@example.com', birthDate: '2000-01-01', cpf: '529.982.247-25', password: 'test-password-long-enough', website: '' }) });
   const connectedBody = await readJson(connected);
   assert.equal(connected.status, 200, JSON.stringify(connectedBody));
   assert.deepEqual(backendPaths.slice(connectStartIndex, connectStartIndex + 3), ['/api/desktop/identity', '/api/students', '/api/student/desktop-sync'], 'dashboard path normalizes to origin and is checked before student credentials are sent');
@@ -162,13 +167,13 @@ test('desktop offline mission survives restart and sync retries do not duplicate
   assert.deepEqual((await readJson(configuredPreferences)).preferences, { automatic: true, intervalSeconds: 30, paused: true }, 'sync preferences are persisted locally');
   identityMatches = false;
   const incompatible = await fetch(`${localUrl}/api/desktop/connect`, { method: 'POST', headers: { Origin: localOrigin, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'Aluna Teste', email: 'aluna@example.com', birthDate: '2000-01-01', website: '', photoSharingConsent: true }) });
+    body: JSON.stringify({ action: 'register', name: 'Aluna Teste', email: 'aluna@example.com', birthDate: '2000-01-01', cpf: '529.982.247-25', password: 'test-password-long-enough', website: '' }) });
   assert.equal(incompatible.status, 502, 'an incompatible server is rejected before login');
   assert.equal(loginRequests, 1, 'student details are never sent before MetaLab identity validation');
   identityMatches = true;
   identityStatus = 404;
   const missingIdentity = await fetch(`${localUrl}/api/desktop/connect`, { method: 'POST', headers: { Origin: localOrigin, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'Aluna Teste', email: 'aluna@example.com', birthDate: '2000-01-01', website: '', photoSharingConsent: true }) });
+    body: JSON.stringify({ action: 'register', name: 'Aluna Teste', email: 'aluna@example.com', birthDate: '2000-01-01', cpf: '529.982.247-25', password: 'test-password-long-enough', website: '' }) });
   const missingIdentityBody = await readJson(missingIdentity);
   assert.equal(missingIdentity.status, 502);
   assert.match(missingIdentityBody.error, /HTTP 404/u, 'a missing production identity route is distinguished from network failure');
@@ -285,12 +290,12 @@ test('desktop offline mission survives restart and sync retries do not duplicate
   assert.equal(pendingOperationBeforeRecovery.state, 'needs_auth');
   const recoveryStartIndex = backendPaths.length;
   const recoveredConnection = await fetch(`${localUrl}/api/desktop/connect`, { method: 'POST', headers: { Origin: localOrigin, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'Aluna Teste', email: 'aluna@example.com', birthDate: '2000-01-01', website: '', photoSharingConsent: true }) });
+    body: JSON.stringify({ action: 'login', identifier: 'aluna@example.com', password: 'test-password-long-enough' }) });
   const recoveredConnectionBody = await readJson(recoveredConnection);
   assert.equal(recoveredConnection.status, 200, JSON.stringify(recoveredConnectionBody));
   assert.equal(recoveredConnectionBody.recovered, true, 'an online login recovers the old grant instead of silently orphaning pending work');
   assert.equal(recoveryRequests, 1);
-  assert.deepEqual(backendPaths.slice(recoveryStartIndex, recoveryStartIndex + 3), ['/api/desktop/identity', '/api/students', '/api/student/desktop-sync']);
+  assert.deepEqual(backendPaths.slice(recoveryStartIndex, recoveryStartIndex + 3), ['/api/desktop/identity', '/api/session', '/api/student/desktop-sync']);
   const recoveredCookie = recoveredConnection.headers.getSetCookie().map(item => item.split(';', 1)[0]).find(item => item.startsWith('metalab_desktop_session='));
   assert.ok(recoveredCookie);
   const recoveredHeaders = { Cookie: recoveredCookie, Origin: localOrigin, 'Content-Type': 'application/json' };

@@ -8,7 +8,6 @@ export type MissionEvidence = {
   choice?: string;
   text?: string;
   businessConfigured?: boolean;
-  photoCount?: number;
   video?: {
     name: string;
     type: string;
@@ -103,17 +102,6 @@ export function evaluateMission(mission: Mission, evidence: MissionEvidence, aut
         guidance: 'Remova links, e-mails, telefones, senhas ou códigos. Use somente informações fictícias do exercício.',
       },
     ]);
-  }
-
-  if (mission.kind === 'gallery') {
-    const required = mission.requiredPhotos ?? 1;
-    const count = Math.max(0, Number(evidence.photoCount) || 0);
-    return result(mission, [{
-      id: 'gallery-photos',
-      label: `Ter ${required} foto${required === 1 ? '' : 's'} na Galeria`,
-      met: count >= required,
-      guidance: `A Galeria tem ${count} foto${count === 1 ? '' : 's'}. Abra a Câmera do celular e salve mais ${Math.max(0, required - count)}.`,
-    }]);
   }
 
   if (mission.kind === 'video') {

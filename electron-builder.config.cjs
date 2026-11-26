@@ -7,9 +7,9 @@ if (!/^dist\/desktop\/release(?:-[a-z0-9-]+)?$/u.test(desktopReleaseDir)) throw 
 
 module.exports = {
   appId: 'br.com.metalab.pocket',
-  productName: 'MetaLab Pocket',
+  productName: 'CaféFlow Pocket',
   directories: { output: desktopReleaseDir },
-  files: ['electron/**/*', 'package.json'],
+  files: ['electron/**/*', 'package.json', '!node_modules/**'],
   extraResources: [{ from: path.join(desktopDistDir, 'standalone'), to: 'next-server' }],
   asar: true,
   npmRebuild: false,

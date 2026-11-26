@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createBlankPresentationDocument } from '@/domain/presentations';
-import { hasTeacherSession } from '@/server/teacher-auth';
+import { createCanvaLessonDocument } from '@/domain/canva-lesson';
+import { getTeacherAccountSession } from '@/server/teacher-accounts';
 import { findStudentBySessionToken, getStudentClass } from '@/server/repository';
 import { readSessionToken } from '@/server/session';
 import { listStudentPresentations, listTeacherPresentations, createPresentation, duplicatePresentation, updatePresentation, softDeletePresentation } from '@/server/presentations';
@@ -19,14 +20,16 @@ function isMissingModuleSchema(error: unknown) {
 
 function unavailableMessage(error: unknown, fallback: string) {
   return isMissingModuleSchema(error)
-    ? 'MetaLab Apresentações ainda não foi instalado neste banco. Aplique as migrations pendentes.'
+    ? 'O módulo de apresentações ainda não foi instalado neste banco. Aplique as migrations pendentes.'
     : fallback;
 }
 
 export async function GET(request: NextRequest) {
   try {
-    if (hasTeacherSession(request)) {
-      return NextResponse.json({ presentations: await listTeacherPresentations(), role: 'teacher' }, { headers });
+    const teacher = await getTeacherAccountSession(request);
+    if (teacher) {
+      const scope = teacher.role === 'admin' ? undefined : teacher.id;
+      return NextResponse.json({ presentations: await listTeacherPresentations(scope), role: teacher.role }, { headers });
     }
     const token = readSessionToken(request);
     const student = token ? await findStudentBySessionToken(token) : null;
@@ -42,20 +45,28 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!hasTeacherSession(request)) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers });
+  const teacher = await getTeacherAccountSession(request).catch(() => null);
+  if (!teacher) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers });
+  const teacherScope = teacher.role === 'admin' ? undefined : teacher.id;
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers });
   try {
-    const body = await readJson(request, 24 * 1024);
+    const body = await readJson(request, 2 * 1024 * 1024);
     const input = z.discriminatedUnion('action', [
       z.object({ action: z.literal('create'), title, classIds, isPublished: z.boolean().default(false) }).strict(),
+      z.object({ action: z.literal('create-canva-lesson'), classIds }).strict(),
       z.object({ action: z.literal('duplicate'), id: z.string().uuid(), title }).strict()
     ]).parse(body);
     if (input.action === 'duplicate') {
-      const id = await duplicatePresentation(input.id, input.title);
+      const id = await duplicatePresentation(input.id, input.title, teacherScope);
       return id ? NextResponse.json({ id }, { status: 201, headers }) : NextResponse.json({ error: 'Apresentação não encontrada.' }, { status: 404, headers });
     }
-    if (input.isPublished && !input.classIds.length) return NextResponse.json({ error: 'Escolha ao menos uma turma antes de publicar.' }, { status: 400, headers });
-    const presentation = await createPresentation({ ...input, document: createBlankPresentationDocument() });
+    const isCanvaLesson = input.action === 'create-canva-lesson';
+    const lessonTitle = 'CANVA — Introdução ao Design e à Criação Visual';
+    const createInput = isCanvaLesson
+      ? { title: lessonTitle, classIds: input.classIds, isPublished: false, document: createCanvaLessonDocument() }
+      : { ...input, document: createBlankPresentationDocument() };
+    if (createInput.isPublished && !createInput.classIds.length) return NextResponse.json({ error: 'Escolha ao menos uma turma antes de publicar.' }, { status: 400, headers });
+    const presentation = await createPresentation(createInput, teacherScope);
     if (!presentation) return NextResponse.json({ error: 'Uma das turmas selecionadas não existe.' }, { status: 400, headers });
     return NextResponse.json({ presentation }, { status: 201, headers });
   } catch (error) {
@@ -68,12 +79,14 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!hasTeacherSession(request)) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers });
+  const teacher = await getTeacherAccountSession(request).catch(() => null);
+  if (!teacher) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers });
+  const teacherScope = teacher.role === 'admin' ? undefined : teacher.id;
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers });
   try {
     const input = z.object({ id: z.string().uuid(), title, classIds, isPublished: z.boolean(), expectedRevision: z.number().int().positive() }).strict().parse(await readJson(request, 4096));
     if (input.isPublished && !input.classIds.length) return NextResponse.json({ error: 'Escolha ao menos uma turma antes de publicar.' }, { status: 400, headers });
-    const result = await updatePresentation(input);
+    const result = await updatePresentation({ ...input, responsibleTeacherId: teacherScope });
     if (result.kind === 'missing') return NextResponse.json({ error: 'Apresentação não encontrada.' }, { status: 404, headers });
     if (result.kind === 'missing-class') return NextResponse.json({ error: 'Uma das turmas selecionadas não existe.' }, { status: 400, headers });
     if (result.kind === 'conflict') return NextResponse.json({ error: 'Esta apresentação foi alterada em outra sessão. Atualize a lista antes de salvar.' }, { status: 409, headers });
@@ -88,11 +101,13 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!hasTeacherSession(request)) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers });
+  const teacher = await getTeacherAccountSession(request).catch(() => null);
+  if (!teacher) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers });
+  const teacherScope = teacher.role === 'admin' ? undefined : teacher.id;
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers });
   try {
     const input = z.object({ id: z.string().uuid(), expectedRevision: z.number().int().positive() }).strict().parse(await readJson(request, 1024));
-    const deleted = await softDeletePresentation(input.id, input.expectedRevision);
+    const deleted = await softDeletePresentation(input.id, input.expectedRevision, teacherScope);
     return deleted ? NextResponse.json({ ok: true }, { headers }) : NextResponse.json({ error: 'A apresentação mudou ou não existe mais. Atualize a lista.' }, { status: 409, headers });
   } catch (error) {
     if (error instanceof Response) return error;

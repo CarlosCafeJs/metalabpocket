@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { checkServerIdentity } from 'node:tls';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import nextEnv from '@next/env';
@@ -16,16 +17,17 @@ if (!connectionString) {
   process.exitCode = 1;
 } else {
   const ca = process.env.DATABASE_CA?.replace(/\\n/g, '\n');
+  const servername = process.env.DATABASE_SSL_SERVERNAME?.trim();
   // Keep certificate verification enabled in production. The opt-in exists
   // only to let local development connect to Railway's self-signed TCP proxy.
-  const allowInsecureLocalTls =
-    process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'false' &&
-    process.env.NODE_ENV !== 'production' &&
-    process.env.VERCEL !== '1';
-  const rejectUnauthorized = !allowInsecureLocalTls;
-  const ssl = process.env.DATABASE_SSL === 'false'
-    ? false
-    : ca ? { ca, rejectUnauthorized } : { rejectUnauthorized };
+  const ssl = {
+    ...(ca ? { ca } : {}),
+    ...(servername ? {
+      servername,
+      checkServerIdentity: (_hostname, certificate) => checkServerIdentity(servername, certificate)
+    } : {}),
+    rejectUnauthorized: true
+  };
   const client = new Client({
     connectionString,
     ssl,

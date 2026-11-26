@@ -1,81 +1,37 @@
-# MetaLab Pocket
+# Edu Café Flow
 
-Plataforma educacional feita em Next.js, React e PostgreSQL para praticar uso do smartphone, fotografia de produtos, comunicação comercial e segurança digital em um ambiente de aula. A experiência mantém o celular virtual, o Estúdio de Fotografia 3D, a Galeria local e as simulações de WhatsApp Business e Instagram.
+Plataforma educacional em Next.js, React e PostgreSQL para organizar turmas, propor missões e entregas, trocar ideias no InstaFlow e Fórum, criar apresentações e acompanhar a aprendizagem.
 
-## Estrutura do produto
+## Áreas
 
-- **Entrada do aluno:** nome, e-mail e data de nascimento. Se e-mail e nascimento já estiverem cadastrados, a entrada emite uma nova sessão para o mesmo aluno e recupera o progresso salvo. Não há senha nem autenticação forte de identidade.
-- **Central:** progresso persistido, próxima missão, negócio e marcos da trilha de 20 horas.
-- **Minha Empresa:** contexto usado pelas atividades e pelo perfil comercial simulado.
-- **Missões:** cinco módulos com verificações por lista, escolha, resposta escrita, negócio, Galeria local ou vídeo local.
-- **Entregas:** recebe nome, descrição, data da aula e foto, vídeo curto ou PDF pedido pelo professor.
-- **Turmas:** o professor cria turmas com código de 8 caracteres; o aluno entra com o código e o professor pode adicionar, remover ou mover alunos.
-- **InstaLab:** mural privado da turma para publicar textos e fotos da empresa, curtir e comentar. Exige empresa cadastrada e vínculo a uma turma; não publica em redes externas.
-- **Celular virtual e Estúdio 3D:** aplicações originais mantidas em `/simulator`, carregadas como ilhas interativas dentro de páginas React.
-- **Meu Kit Digital:** reúne o perfil, o progresso e as fotos produzidas no navegador.
+- **Aluno:** Central, Perfil, Minha Turma, Missões, InstaFlow, Entregas e Fórum.
+- **Professor:** turmas e matrículas, missões de sala, acompanhamento das entregas, InstaFlow, apresentações e administração de contas docentes.
+- **Contas:** aluno entra com CPF ou e-mail e senha; professor solicita cadastro e permanece sem acesso até ser aprovado por um administrador. O acesso docente usa contas no banco, não credenciais fixas de ambiente.
+- **MetaCoins e anúncios:** carteira, campanhas, aprovação e cobrança continuam no escopo funcional.
+- **Desktop:** Electron e sincronização offline permanecem no repositório; os contratos internos só devem mudar com validação de compatibilidade.
 
-Publicações fictícias, conversas e a galeria do celular ficam separadas por identificador de aluno neste navegador. A Câmera tenta enviar cada foto ao PostgreSQL automaticamente; fotos sincronizadas aparecem ao professor e podem ser removidas pelo aluno. Se a conexão falhar, a foto permanece na galeria local até uma nova tentativa. As publicações do InstaLab, curtidas, comentários e imagens são salvos no PostgreSQL e filtrados pela turma atual do aluno. Imagens do InstaLab aceitam JPG, PNG ou WebP de até 4 MB. Entregas feitas a pedido do professor ficam vinculadas ao aluno e à sessão no PostgreSQL. Missões, negócio e progresso também são salvos usando o identificador da sessão.
+## Executar localmente
 
-## Desenvolvimento
-
-1. Instale Node.js compatível com Next 16 e dependências com `npm ci`.
-2. Copie `.env.example` para `.env.local` e preencha `DATABASE_URL` com uma credencial PostgreSQL **nova e protegida**. A credencial compartilhada anteriormente na conversa deve ser rotacionada antes do uso.
-3. Configure `DATABASE_CA` somente se o provedor exigir uma CA específica. O cliente valida certificados TLS; não desative essa validação.
-4. Rode `npm run db:migrate` para aplicar migrações versionadas uma vez.
+1. Instale Node.js compatível com Next.js 16.
+2. Instale as dependências com `npm ci`.
+3. Copie `.env.example` para `.env.local` e configure um PostgreSQL **isolado de produção**.
+4. Configure os segredos de CPF conforme `.env.example`; use segredos aleatórios com pelo menos 32 bytes e não os exponha no cliente.
 5. Rode `npm run dev` e acesse `http://localhost:3000`.
 
-Para habilitar a área do professor, configure no servidor `METALAB_TEACHER_CPF`, `METALAB_TEACHER_PASSWORD` (mínimo de 12 caracteres) e `METALAB_TEACHER_SESSION_SECRET` (segredo aleatório com pelo menos 32 caracteres). Um segundo acesso opcional usa `METALAB_TEACHER_2_CPF` e `METALAB_TEACHER_2_PASSWORD`; esse identificador aceita 11 dígitos sem validar identidade civil e pode ser fictício, mas exige senha forte própria. Configure as credenciais localmente em `.env.local` e como variáveis protegidas no serviço da Railway; nunca as publique no repositório.
+`npm run db:migrate` aplica, em ordem, todas as migrations SQL ainda ausentes no `DATABASE_URL` carregado pelo processo. O runner atual não tem seleção de baseline nem proteção suficiente para impedir um alvo incorreto. **Não execute esse comando com o `.env.local` atual nem aponte-o ao banco publicado:** ele pode alterar produção. Consulte [a auditoria da reinicialização do banco](docs/edu-cafe-flow-database-reinitialization.md) antes de qualquer migration.
 
-Na área de alunos, “Remover aluno” desativa o acesso, revoga as sessões e tira o cadastro da lista ativa. Para proteger dados reais, fotos, entregas, progresso e vínculos ficam preservados; o professor pode consultar “Ver removidos” e restaurar o cadastro. A migração `010_student_archive.sql` adiciona apenas a marca de arquivamento e um índice, sem apagar ou reescrever registros.
+Para criar o primeiro administrador, o script explícito `npm run teacher:bootstrap-admin` usa os parâmetros listados no `.env.example`; ele não é executado durante a inicialização do app. Faça esse provisionamento somente em um banco novo autorizado e por um terminal seguro.
 
-### PostgreSQL local para testes
+## Verificações locais
 
-O arquivo `compose.yaml` sobe um PostgreSQL isolado, publicado somente em `127.0.0.1:5433`, com volume próprio. No PowerShell, use:
+- `npm run typecheck`
+- `npm test`
+- `npm run build`
+- `npm run desktop:build`
+- `npm run desktop:test`
 
-```powershell
-docker compose up -d
-$env:DATABASE_URL = 'postgresql://metalab_test:metalab_test_only@127.0.0.1:5433/metalab_test'
-$env:DATABASE_SSL = 'false'
-npm run db:migrate
-npm run dev
-```
+## Banco e publicação
 
-Essas credenciais são apenas para o banco local descartável e nunca devem ser usadas na Vercel ou em produção. `docker compose down` para o contêiner e preserva o volume; `docker compose down -v` também apaga os dados locais de teste.
+O serviço Railway publicado continua no ar e ligado ao banco antigo. A limpeza do banco e a criação da baseline nova estão em auditoria; não há corte de conexão, deploy ou push autorizado nesta etapa. Não use dados de produção em testes. A estratégia, o inventário de módulos e as pendências estão em [docs/edu-cafe-flow-database-reinitialization.md](docs/edu-cafe-flow-database-reinitialization.md).
 
-`/api/health` informa se a conexão e as tabelas estão prontas, inclusive as do InstaLab. A API não cria tabelas em requisições de cadastro. As migrações incluem entregas com arquivos limitados a 4 MB (JPG, PNG, WebP, PDF, MP4 ou WebM), dentro do limite de requisição das funções Vercel. O professor autenticado acessa os dados em `/docente/painel`; o relatório usa a impressão do navegador, que permite escolher “Salvar como PDF” e inclui as fotos carregadas.
-
-## Publicação na Vercel
-
-Importe o repositório `CarlosCafeJs/metalabpocket` com o preset **Next.js**. Configure `DATABASE_URL`, `METALAB_TEACHER_CPF`, `METALAB_TEACHER_PASSWORD` e `METALAB_TEACHER_SESSION_SECRET` como variáveis protegidas no painel da Vercel; configure também `METALAB_TEACHER_2_CPF` e `METALAB_TEACHER_2_PASSWORD` se usar o segundo acesso. Execute as migrações uma vez em ambiente controlado com a mesma conexão, depois publique. Não coloque credenciais em variáveis `NEXT_PUBLIC_*`, no código-fonte, em commits ou em comandos registrados no terminal.
-
-Para PostgreSQL Railway, use a URL pública TCP Proxy em `DATABASE_URL`. O Postgres padrão do Railway cria uma CA e um certificado próprios; para manter a validação TLS na Vercel, copie o certificado público `/var/lib/postgresql/data/certs/root.crt` pelo Shell do serviço Postgres Railway e salve seu conteúdo como variável protegida `DATABASE_CA` na Vercel. Configure também `DATABASE_SSL_SERVERNAME=localhost`, nome presente no certificado Railway. Mantenha `DATABASE_SSL=true` e `DATABASE_SSL_REJECT_UNAUTHORIZED=true`. Alterações nas variáveis só valem em uma nova implantação. A conexão externa usa o proxy público do Railway; serviços dentro da Railway podem usar a rede privada. Consulte a [documentação do PostgreSQL Railway](https://docs.railway.com/databases/postgresql) e o [script oficial que gera os certificados](https://github.com/railwayapp-templates/postgres-ssl/blob/main/init-ssl.sh).
-
-Na entrada, o servidor procura primeiro um aluno pelo e-mail e data de nascimento; quando encontra, cria uma sessão nova para o registro existente. A inserção de outro cadastro só ocorre quando não encontra correspondência. Essa consulta só acontece depois de conectar ao banco, por isso o certificado precisa estar confiável para a retomada funcionar.
-
-O projeto contém a aplicação Next.js e pode ser publicado na Vercel. O endereço estático anterior do Sites não executa as APIs PostgreSQL e não substitui esta implantação.
-
-## Dados e privacidade
-
-O cadastro do aluno não é autenticação de identidade. A sessão dura até 12 horas e usa um token aleatório, guardado como hash no banco e em cookie `HttpOnly`, `SameSite=Lax` e `Secure` em produção. A sessão do professor dura até 6 horas e usa cookie `HttpOnly`, `SameSite=Strict` e assinatura HMAC. Em computadores compartilhados, encerre a sessão ao final da aula. Cada API de aluno filtra pelo identificador da sessão; a turma, o perfil cadastrado, o progresso, as fotos compartilhadas e as entregas estão atrás da autenticação do professor. Nome, e-mail e nascimento ficam no PostgreSQL; mantenha acesso restrito e defina retenção e exclusão conforme a política do curso. O professor vê fotos do Estúdio 3D somente quando o aluno permite o compartilhamento.
-
-Os aplicativos simulados não conectam com Instagram, WhatsApp, contatos, links ou redes externas. Respostas com links, e-mails, telefones, senhas ou códigos são barradas antes de serem salvas.
-
-## Recursos preservados
-
-- `public/simulator/index.html`: smartphone virtual e seus aplicativos fictícios.
-- `public/simulator/camera-studio.html`: estúdio 3D com celular, caneca, tênis e camisa.
-- `metalab-pocket-gallery-{studentId}` (IndexedDB): fotos capturadas no estúdio, separadas por aluno.
-- `metalab-pocket-instagram-{studentId}` (IndexedDB): publicações simuladas separadas por aluno.
-- `metalab-business-v1-{studentId}` (localStorage): conversas e configurações de treino do WhatsApp Business, separadas por aluno.
-
-As páginas Next usam React e Route Handlers no App Router. A camada de persistência PostgreSQL fica em `src/server`; o esquema é mantido em `db/migrations`.
-
-## Comandos úteis
-
-- `npm run dev`: servidor de desenvolvimento.
-- `npm run typecheck`: verificação TypeScript.
-- `npm run build`: build de produção com Webpack.
-- `npm start`: servir o build local.
-- `npm run db:migrate`: aplicar as migrações do PostgreSQL.
-
-O professor cria e consulta códigos de turma na aba **Turmas** de `/docente/painel`. O aluno usa a página **Turmas** para entrar com o código; entrar em outra turma substitui o vínculo anterior. Depois de salvar uma empresa e entrar em uma turma, o aluno abre **InstaLab** no menu. O perfil do professor inclui as publicações do aluno, as imagens, as curtidas e os comentários.
+O repositório também contém `vercel.json`, mas a existência desse arquivo não confirma que haja um projeto Vercel ativo. Confirme destinos e variáveis protegidas antes de planejar a troca do banco.

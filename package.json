@@ -1,8 +1,8 @@
 {
-  "name": "metalab-pocket",
+  "name": "cafeflow-pocket",
   "private": true,
   "version": "1.0.0",
-  "description": "Simulador educacional MetaLab Pocket",
+  "description": "Sistema educacional CaféFlow Pocket",
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",
@@ -13,12 +13,13 @@
     "desktop:dist:win": "electron-builder --win nsis --config electron-builder.config.cjs",
     "start": "next start",
     "db:migrate": "node scripts/migrate.mjs",
+    "teacher:bootstrap-admin": "node scripts/bootstrap-teacher-admin.mjs",
     "instalab:bill": "node scripts/bill-instalab-campaigns.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --test"
   },
   "dependencies": {
-    "next": "^16.4.2",
+    "next": "^16.4.6",
     "pg": "^8.23.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

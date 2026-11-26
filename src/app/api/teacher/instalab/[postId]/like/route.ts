@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { setTeacherInstalabLike } from '@/server/repository';
 import { hasTeacherSession } from '@/server/teacher-auth';
+import { getTeacherAccountSession } from '@/server/teacher-accounts';
 import { sameOrigin } from '@/server/validation';
 import { z } from 'zod';
 
@@ -11,11 +12,12 @@ const headers = { 'Cache-Control': 'no-store' };
 
 async function change(request: NextRequest, context: Context, liked: boolean) {
   if (!sameOrigin(request)) return NextResponse.json({ error: 'Origem não permitida.' }, { status: 403, headers });
-  if (!hasTeacherSession(request)) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers });
+  const legacy=hasTeacherSession(request); const account=legacy?null:await getTeacherAccountSession(request).catch(()=>null);
+  if (!legacy && !account) return NextResponse.json({ error: 'Sessão do professor necessária.' }, { status: 401, headers });
   const { postId } = await context.params;
   if (!z.string().uuid().safeParse(postId).success) return NextResponse.json({ error: 'Publicação não encontrada.' }, { status: 404, headers });
   try {
-    const likeCount = await setTeacherInstalabLike(postId, liked);
+    const likeCount = await setTeacherInstalabLike(postId, liked,account?.role==='teacher'?account.id:undefined);
     if (likeCount === null) return NextResponse.json({ error: 'Publicação não encontrada.' }, { status: 404, headers });
     return NextResponse.json({ likeCount, likedByMe: liked }, { headers });
   } catch (error) {

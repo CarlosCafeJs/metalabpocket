@@ -3,8 +3,8 @@ import { AppShell } from '@/components/AppShell';
 import SyncCenter from './SyncCenter';
 
 export const metadata: Metadata = {
-  title: 'Sincronização · MetaLab Pocket Desktop',
-  description: 'Acompanhe a conectividade, a fila offline e as operações confirmadas do MetaLab Pocket Desktop.'
+  title: 'Sincronização · CaféFlow Pocket Desktop',
+  description: 'Acompanhe a conectividade, a fila offline e as operações confirmadas do CaféFlow Pocket Desktop.'
 };
 
 export default function DesktopSyncPage() {

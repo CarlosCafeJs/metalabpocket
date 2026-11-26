@@ -1,61 +1,57 @@
-# MetaLab Apresentações — implementação inicial
+# MetaLab Apresentações — auditoria e evolução Web
 
-Data: 29 de outubro de 2026
-Escopo: fundação Web, biblioteca e visualizador. A aplicação Desktop, Electron e SQLite não foram alterados como parte deste módulo.
+Atualizado em 29 de outubro de 2026. O escopo deste trabalho é exclusivamente Web. Electron, SQLite, sync offline, demais módulos e dados de produção não foram alterados.
 
-## Arquitetura adotada
+## Auditoria do módulo
 
-- O documento é JSON versionado (`schemaVersion: 1`) com tela 1280×720, slides ordenados, elementos, temas e referências a anexos.
-- `src/domain/presentations.ts` é o contrato Zod compartilhado por validação e renderização. Campos desconhecidos são rejeitados. Texto é renderizado pelo React como texto normal; nenhum HTML ou JavaScript da apresentação é injetado no DOM.
-- `src/server/presentations.ts` isola as consultas e transações PostgreSQL do editor e das páginas.
-- As Route Handlers `/api/presentations` e `/api/presentations/[presentationId]` verificam a sessão no servidor. Professores administram a biblioteca; alunos só listam e abrem apresentações publicadas e associadas à turma em que estão matriculados.
-- A migration `db/migrations/016_presentations.sql` cria documentos, associação a turmas e snapshots de revisão. A aplicação usa comparação de `revision` para detectar atualizações concorrentes. Snapshots são limitados aos 50 mais recentes por apresentação.
-- A remoção da biblioteca é lógica (`deleted_at`), preservando snapshots; turmas são associadas por IDs validados no servidor.
-- `SlideRenderer` é o componente comum de renderização, usado em miniaturas e na área de visualização, permitindo reutilização pelo editor futuro.
+| Área | Estado | Evidência/limite |
+| --- | --- | --- |
+| Biblioteca docente e de alunos | Implementado | `/docente/apresentacoes` gerencia materiais; `/apresentacoes` lista somente documentos publicados para a turma do aluno. |
+| Visualização e apresentação | Implementado | Miniaturas, setas do teclado, tela cheia e controles de navegação em `PresentationViewer`. |
+| Edição de slides | Implementado nesta etapa | Novo editor Web em `/docente/apresentacoes/[presentationId]/editar`: páginas, texto, formas, cores, arrastar, redimensionar, camadas, duplicar/reordenar/excluir slides, desfazer/refazer. |
+| Salvamento | Implementado nesta etapa | Autosave com debounce, botão “Salvar agora”, controle otimista por revisão e erro 409 explícito em conflito. Cada gravação cria snapshot e mantém até 50 versões. |
+| Imagens | Implementado nesta etapa; migration 017 aplicada | Upload limitado a 10 MB, apenas JPEG/PNG/WebP validados por assinatura binária. Binários ficam em tabela privada; alunos só leem anexos de materiais publicados para sua turma. Limite de 50 anexos por apresentação. |
+| Exportação | Parcial | “Exportar PDF” abre o diálogo de impressão do navegador com páginas em paisagem; salvar como PDF depende do navegador. Não há exportação PNG/PPTX nem fidelidade garantida entre fontes/dispositivos. |
+| Histórico visual/restauração | Parcial | O servidor registra até 50 snapshots; interface de consultar/restaurar revisões ainda não foi criada. Desfazer/refazer funciona apenas na sessão atual do editor. |
+| Aula Canva pronta | Implementada como rascunho gerável | “Criar aula pronta: Canva” cria uma apresentação editável de 20 slides via API, sem publicação automática. Requer tabelas das migrations 016 e 017. A criação do registro da aula no banco não foi executada nesta tarefa. |
+| Capturas reais de tela do Canva | Ausente | Os slides usam texto, formas e arte MetaLab. Nenhuma ilustração foi apresentada como captura real do Canva. |
+| Testes com PostgreSQL real, contas e navegador | Parcial | O ledger e a presença das tabelas foram verificados em leitura após aplicar a migration 017; não houve gravação de dados de aluno/apresentação nem teste E2E autenticado. |
 
-## Entregue nesta etapa
+## Aula criada
 
-- Biblioteca de apresentações para professor e aluno.
-- Criação de rascunho com capa inicial 16:9, renomeação, duplicação, publicação/recolhimento e remoção lógica.
-- Vínculo de publicação a uma ou mais turmas. Rascunhos sem turma permanecem privados para alunos.
-- Visualizador com miniaturas, navegação por teclado, tela cheia e controles anterior/próximo.
-- Respostas claras para schema ainda não migrado; validação de UUIDs e conteúdo JSON; proteção same-origin em operações de escrita.
-- Migration 016 criada, **não executada**. Não houve conexão ou escrita em PostgreSQL, migração de produção, deploy ou push.
+Título: **CANVA — Introdução ao Design e à Criação Visual**. O modelo contém 20 páginas: objetivos, acesso supervisionado, interface, formatos, modelos, sequência, texto, fontes, contraste, imagens, upload, composição, revisão, apresentação, exportação, privacidade/direitos, desafio prático, checklist e fontes. É conteúdo introdutório para iniciantes; explica que rótulos e posições da interface podem mudar por idioma, plano e dispositivo. O professor pode alterar o texto e o design antes de liberar.
 
-## Arquivos desta implementação
+Orientações da aula foram confrontadas com fontes oficiais atuais do Canva: [adicionar imagens](https://www.canva.com/help/add-images/), [apresentar um design](https://www.canva.com/help/presenting-designs/), [baixar ou salvar designs](https://www.canva.com/help/download-or-purchase/) e [formatos de download](https://www.canva.com/help/download-file-types/). As instruções não incorporam imagens protegidas nem prometem uma posição fixa de controles.
 
-- `src/domain/presentations.ts`
-- `src/server/presentations.ts`
-- `src/app/api/presentations/route.ts`
-- `src/app/api/presentations/[presentationId]/route.ts`
-- `src/app/apresentacoes/**`
-- `src/app/docente/apresentacoes/**`
-- `src/components/presentations/SlideRenderer.tsx`
-- `src/components/AppShell.tsx`
-- `src/app/docente/painel/teacher-panel.tsx`
-- `src/app/layout.tsx`, `src/app/presentations.css`
-- `db/migrations/016_presentations.sql`
-- `scripts/presentations-document.test.mjs`
+## Arquivos criados/alterados
 
-## Validação
+- `src/app/docente/apresentacoes/PresentationEditor.tsx` e `src/app/docente/apresentacoes/[presentationId]/editar/page.tsx`: editor visual e rota docente.
+- `src/app/docente/apresentacoes/TeacherPresentationLibrary.tsx`: atalhos de edição e criação da aula pronta.
+- `src/app/api/presentations/[presentationId]/route.ts`: PATCH do documento, validação Zod, limite de corpo e checagem de revisão.
+- `src/app/api/presentations/[presentationId]/assets/route.ts` e `[assetId]/route.ts`: envio/serviço de anexos com autorização.
+- `src/server/presentations.ts`: gravação transacional do documento e snapshot de revisão.
+- `src/domain/canva-lesson.ts`: conteúdo e composição da aula de 20 slides.
+- `src/domain/presentation-image.ts`: detecção de assinatura JPEG/PNG/WebP.
+- `src/components/presentations/SlideRenderer.tsx` e `src/app/apresentacoes/PresentationViewer.tsx`: renderização autorizada de imagens.
+- `src/app/presentations.css`: editor responsivo e impressão em paisagem.
+- `db/migrations/017_presentation_assets.sql`: armazenamento privado de imagens; aplicado no PostgreSQL Railway `production` após backup.
+- `scripts/presentations-document.test.mjs`: testes do documento da aula e validação de assinatura de imagem.
 
-- `npm run typecheck`: passou.
-- `npm test`: passou, 21 testes; inclui validação de documento inicial, rejeição de propriedades executáveis/desconhecidas e referências de imagem sem anexo.
-- `npm run build`: passou após repetir fora do sandbox, pois a primeira tentativa foi bloqueada com `EPERM` ao criar diretório de build.
-- Build lista as páginas `/apresentacoes`, `/apresentacoes/[presentationId]`, `/docente/apresentacoes`, `/docente/apresentacoes/[presentationId]` e as duas Route Handlers.
-- Não foi executado teste integrado de PostgreSQL nem aplicado migration; precisa ser validado primeiro em banco de desenvolvimento/homologação.
+## Persistência e autorização
 
-## Pendências antes de considerar o módulo completo
+As alterações de slides chamam `PATCH /api/presentations/:id` com o documento completo e a revisão esperada. O servidor valida o schema versionado, grava o JSON e snapshot na mesma transação e rejeita concorrência com HTTP 409. Professores autenticados podem editar e enviar anexos. Alunos só obtêm imagens por apresentação publicada e associada à turma ativa; a rota não aceita URLs remotas para anexos.
 
-- Aplicar a migration 016 apenas em banco de desenvolvimento/homologação e testar as rotas com professor, aluno matriculado, aluno sem turma e turma não autorizada.
-- Implementar editor visual: seleção, mover/redimensionar, ferramentas, camadas, formas/imagens, desfazer/refazer e atalhos.
-- Implementar salvamento automático do documento com debounce, recuperação de rascunho e UI de conflitos. A concorrência otimista já está modelada para escritas do documento na API futura, mas ainda não há editor que salve slides editados.
-- Implementar upload/armazenamento protegido de imagens e validação de conteúdo binário. A forma `image` está reservada no esquema; a UI atual exibe placeholder e não aceita anexos.
-- Expor versões e restauração no histórico visual.
-- Exportar para PDF/imagens e executar testes de tela cheia, responsividade, acessibilidade e integração real.
-- Integrar apresentações a aulas e missões somente após validar os modelos e contratos existentes.
-- Não há suporte offline, sync, elementos 3D, gráficos, questionários interativos ou embeds externos nesta fase.
+A migration 016 cria biblioteca, associação de turmas e snapshots; a 017 acrescenta o armazenamento binário de imagem. Antes da escrita, o painel Railway confirmou um backup manual do serviço Postgres em `production`, concluído em **29/10/2026 às 22:59**, com **196 MB**. A leitura do ledger mostrou que 001–016 já estavam aplicadas e apenas 017 estava pendente. A 017 foi aplicada pelo túnel SSH autenticado da Railway; a verificação posterior confirmou ambas as migrations e as tabelas `metalab_presentations` e `metalab_presentation_assets`. Nenhum registro de aluno, turma ou apresentação foi criado ou alterado. Em banco novo, aplique as migrations pela ordem numérica antes de usar o módulo.
+
+## Testes desta etapa
+
+- `npm run typecheck`: aprovado após as alterações finais.
+- `npm test`: aprovado, 23 testes.
+- `npm run build`: aprovado; build Web incluiu a rota docente do editor e as rotas de assets.
+- PostgreSQL Railway `production`: backup manual concluído antes da migration; 017 aplicada e confirmada por consulta somente leitura ao ledger e às tabelas.
+- Testes adicionados: documento Canva de 20 slides satisfaz o schema e assinaturas falsas/curtas são rejeitadas.
+- Pendente: teste E2E de interação do editor, concorrência em PostgreSQL, upload/autorização com contas aluno/professor, impressão/PDF e revisão visual em desktop/celular.
 
 ## Rollback
 
-Reverter os arquivos Web desta etapa e, se a migration 016 tiver sido aplicada em algum ambiente de teste, remover os objetos correspondentes somente após backup e confirmação desse ambiente. A migration não foi aplicada nesta execução, então nenhum rollback de banco é necessário.
+Remova as alterações Web desta etapa e mantenha intactas as alterações preexistentes fora do módulo. A migration 017 adicionou apenas a tabela privada de anexos e seu índice; não removeu nem reescreveu dados. Se for necessário reverter o schema de produção, avalie o snapshot de 29/10/2026 e faça a restauração pelo fluxo normal de recuperação da Railway, considerando gravações posteriores.
