@@ -1,0 +1,58 @@
+.class-files-library,.class-files-teacher-content{width:min(1120px,calc(100% - 40px));margin:28px auto 56px}
+.class-files-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:20px}
+.class-files-heading h1,.class-files-heading h2{margin:8px 0 6px;color:var(--ink);font-size:clamp(25px,3.4vw,38px);letter-spacing:-.045em}
+.class-files-heading p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+.class-files-count,.class-files-teacher-list>header>span{flex:0 0 auto;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--muted);font-size:11px;font-weight:800}
+.class-files-list{display:grid;gap:10px}
+.class-file-card{display:flex;align-items:center;gap:14px;padding:15px 17px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 7px 24px #17274308}
+.class-file-icon{display:grid;flex:0 0 42px;width:42px;height:42px;place-items:center;border-radius:13px;background:#fff0c7;color:#9b6200;font-size:20px;font-weight:900}
+.class-file-copy{display:grid;flex:1;min-width:0;gap:5px}
+.class-file-copy strong{overflow-wrap:anywhere;color:var(--ink);font-size:13px}
+.class-file-copy small{color:var(--muted);font-size:11px}
+.class-files-empty{padding:36px 20px;border:1px dashed var(--line);border-radius:18px;color:var(--muted);text-align:center}
+.class-files-empty>span{color:#d88b00;font-size:24px}
+.class-files-empty h3{margin:9px 0 5px;color:var(--ink);font-size:17px}
+.class-files-empty p{margin:0;font-size:12px}
+.class-files-notice{margin:0 0 17px;padding:12px 15px;border:1px solid #b8dbbd;border-radius:12px;background:#eff8ef;color:#2e6b37;font-size:12px}
+.class-files-notice.is-error{border-color:#f0c178;background:#fff7e5;color:#875500}
+.class-file-card .button-danger{min-height:39px;padding:8px 12px;border:1px solid #e7c9c5;border-radius:11px;background:#fff8f7;color:#9c342a;font:inherit;font-size:11px;font-weight:800;cursor:pointer}
+.class-file-card .button-danger:hover{background:#fce9e6}
+.class-file-card .button-danger:disabled{opacity:.55;cursor:wait}
+.class-files-teacher-page{min-height:100vh;padding:0;background:var(--bg)}
+.class-files-teacher-topbar{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:16px max(24px,calc((100% - 1120px)/2));border-bottom:1px solid var(--line);background:var(--surface)}
+.class-files-teacher-topbar>a{color:var(--muted);font-size:12px;font-weight:800;text-decoration:none}
+.class-files-upload-panel,.class-files-teacher-list{margin-bottom:18px;padding:23px;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:0 12px 35px #17274308}
+.class-files-upload-panel{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(340px,1.2fr);gap:28px;border-top:4px solid #e8a012}
+.class-files-upload-panel h2,.class-files-teacher-list h2{margin:6px 0;font-size:20px;color:var(--ink)}
+.class-files-upload-panel p{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+.class-files-upload-panel form{display:grid;gap:13px}
+.class-files-upload-panel label{display:grid;gap:6px;color:var(--ink);font-size:12px;font-weight:800}
+.class-files-upload-panel input,.class-files-upload-panel select{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);font:inherit;font-size:12px}
+.class-files-upload-panel input[type=file]{padding:8px}
+.class-files-upload-panel form>small{color:var(--muted);font-size:11px}
+.class-files-teacher-list>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.class-files-teacher-list>header h2{margin:5px 0 0}
+@media(max-width:700px){.class-files-library,.class-files-teacher-content{width:calc(100% - 28px);margin-top:18px}.class-files-upload-panel{grid-template-columns:1fr;gap:18px;padding:18px}.class-file-card{gap:10px;padding:12px}.class-file-card .button{min-height:37px;padding:7px 10px;font-size:11px}.class-files-heading{align-items:flex-start}.class-files-count{font-size:10px}.class-files-teacher-topbar{padding:13px 16px}}
+
+/* Private grades */
+.teacher-grade-editor{grid-column:1/-1;margin-top:8px;border:1px solid var(--line);border-radius:11px;background:#faf8f2}
+.teacher-grade-editor>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;cursor:pointer;list-style:none}.teacher-grade-editor>summary::-webkit-details-marker{display:none}.teacher-grade-editor>summary strong{font-size:11px}.teacher-grade-editor>summary>span{color:var(--muted);font-size:10px}.teacher-grade-state{padding:4px 7px;border-radius:99px;background:#f4ead0;color:#795700;font-weight:800}.teacher-grade-state.published{background:#e9f4e9;color:#326c3d}
+.teacher-grade-editor form{display:grid;gap:10px;padding:0 12px 12px}.teacher-grade-fields{display:grid;grid-template-columns:1fr 1fr;gap:9px}.teacher-grade-editor label{display:grid;gap:5px;color:var(--ink);font-size:10px;font-weight:800}.teacher-grade-editor input,.teacher-grade-editor textarea{width:100%;min-height:38px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);font:inherit;font-size:11px}.teacher-grade-editor textarea{resize:vertical}.teacher-grade-meta,.teacher-grade-message{color:var(--muted);font-size:10px}.teacher-grade-message.is-error{color:#a33d30}.teacher-grade-actions{display:flex;gap:8px;flex-wrap:wrap}.teacher-grade-actions .button{min-height:34px;padding:7px 10px;font-size:10px}
+.instalab-teacher-rating{margin:0 0 9px;color:#93620b;font-size:10px;font-weight:750}.instalab-teacher-rating span{color:var(--muted);font-weight:500}
+.teacher-instalab-rating{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:11px 0;padding:10px 12px;border:1px solid #f0dfb7;border-radius:11px;background:#fffaf0}.teacher-instalab-rating>strong{font-size:10px}.teacher-instalab-rating>div{display:flex;gap:2px}.teacher-instalab-rating>div button{border:0;background:transparent;color:#c9c2b3;font-size:19px;line-height:1;cursor:pointer}.teacher-instalab-rating>div button.is-selected{color:#dc9411}.teacher-instalab-rating>div button:disabled{cursor:wait;opacity:.6}.teacher-instalab-rating>small{color:var(--muted);font-size:9px}.teacher-instalab-rating-remove{padding:4px 7px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--muted);font:inherit;font-size:9px;cursor:pointer}
+@media(max-width:560px){.teacher-grade-fields{grid-template-columns:1fr}.teacher-grade-actions{display:grid}.teacher-grade-actions .button{width:100%}}
+@media(max-width:440px){.class-file-card{flex-wrap:wrap}.class-file-copy{flex-basis:calc(100% - 60px)}.class-file-card .button{margin-left:52px}.class-file-card .button-danger{margin-left:0}}
+.student-grades-list{display:grid;gap:12px}
+.student-grade-card{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:15px;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.student-grade-accent{display:grid;width:40px;height:40px;place-items:center;border-radius:13px;background:#edf5df;color:#477717;font-weight:900}
+.student-grade-main h2{margin:5px 0;color:var(--ink);font-size:18px}
+.student-grade-main p{margin:0;color:var(--muted);font-size:11px}
+.student-grade-main blockquote{margin:12px 0 0;padding:10px 12px;border-left:3px solid #e8a012;border-radius:0 9px 9px 0;background:#fbf7ed;color:var(--ink);font-size:12px;white-space:pre-wrap}
+.student-grade-score{color:#477717;font-size:24px;white-space:nowrap}
+.student-grade-score small{color:var(--muted);font-size:13px}
+.student-grades-empty{text-align:center;padding:46px 18px;border:1px dashed var(--line);border-radius:18px;color:var(--muted)}
+.student-grades-empty>span{color:#d88b00;font-size:25px}
+.student-grades-empty h2{margin:8px 0;color:var(--ink);font-size:20px}
+.student-grades-empty p{max-width:460px;margin:0 auto;font-size:12px;line-height:1.6}
+.student-grades-notice{padding:12px 14px;border:1px solid #f0c178;border-radius:12px;background:#fff7e5;color:#875500;font-size:12px}
+@media(max-width:560px){.student-grade-card{grid-template-columns:36px minmax(0,1fr);gap:12px;padding:14px}.student-grade-accent{width:35px;height:35px}.student-grade-score{grid-column:2;font-size:21px}}

@@ -37,6 +37,7 @@ export type InstalabPost = {
   id: string; studentId: string; authorName: string; businessName: string; businessSegment: string; businessDescription: string; hasAvatar: boolean; classId: string; className?: string; body: string;
   imageName: string | null; imageMimeType: string | null; imageSizeBytes: number | null;
   createdAt: string; likeCount: number; likedByMe: boolean; isMine: boolean; comments: InstalabComment[];
+  teacherRatingAverage: number | null; teacherRatingCount: number; teacherStars: number | null;
 };
 
 export type StudentDeliverySummary = {
@@ -897,17 +898,27 @@ export async function getStudentBusinessAndClass(studentId: string) {
   return row ? { studentFullName: row.student_full_name, classId: row.class_id, className: row.class_name, businessId: row.business_id, businessName: row.business_name, businessSegment: row.business_segment, businessDescription: row.business_description, hasAvatar: row.has_avatar } : null;
 }
 
-async function listInstalabPosts(studentId: string, authorOnly = false, teacherView = false, limit = 100, offset = 0, responsibleTeacherId?: string): Promise<InstalabPost[]> {
+async function listInstalabPosts(studentId: string, authorOnly = false, teacherView = false, limit = 100, offset = 0, responsibleTeacherId?: string, viewerTeacherId?: string): Promise<InstalabPost[]> {
   const result = await getPool().query<{
     id: string; student_id: string; class_id: string; author_name: string; business_name: string; business_segment: string; business_description: string; has_avatar: boolean; class_name: string; body: string;
     image_name: string | null; image_mime_type: string | null; image_size_bytes: number | null;
     created_at: Date | string; like_count: number | string; liked_by_me: boolean; comments: InstalabComment[] | null;
+    teacher_rating_average: number | string | null; teacher_rating_count: number | string; teacher_stars: number | null;
   }>(`
     SELECT post.id, post.student_id, post.class_id, student.full_name AS author_name, COALESCE(business.name,student.full_name) AS business_name,
       COALESCE(business.segment,'Perfil pessoal') AS business_segment, COALESCE(business.description,'') AS business_description,
       student.instalab_avatar_data IS NOT NULL AS has_avatar, class.name AS class_name,
       post.body, post.image_name, post.image_mime_type, post.image_size_bytes, post.created_at,
       (SELECT COUNT(*) FROM metalab_instalab_likes likes WHERE likes.post_id = post.id) AS like_count,
+      (SELECT ROUND(AVG(rating.stars)::numeric,1) FROM metalab_instalab_post_ratings rating
+        JOIN metalab_teacher_accounts active_teacher ON active_teacher.id=rating.teacher_id AND active_teacher.account_state='active'
+        WHERE rating.post_id=post.id) AS teacher_rating_average,
+      (SELECT COUNT(*) FROM metalab_instalab_post_ratings rating
+        JOIN metalab_teacher_accounts active_teacher ON active_teacher.id=rating.teacher_id AND active_teacher.account_state='active'
+        WHERE rating.post_id=post.id) AS teacher_rating_count,
+      (SELECT own.stars FROM metalab_instalab_post_ratings own
+        JOIN metalab_teacher_accounts active_teacher ON active_teacher.id=own.teacher_id AND active_teacher.account_state='active'
+        WHERE own.post_id=post.id AND own.teacher_id=$7::uuid) AS teacher_stars,
       CASE WHEN $3::boolean
         THEN EXISTS (SELECT 1 FROM metalab_instalab_likes mine WHERE mine.post_id = post.id AND mine.teacher_like = TRUE)
         ELSE EXISTS (SELECT 1 FROM metalab_instalab_likes mine WHERE mine.post_id = post.id AND mine.student_id = $1)
@@ -934,13 +945,15 @@ async function listInstalabPosts(studentId: string, authorOnly = false, teacherV
       AND ($6::uuid IS NULL OR EXISTS(SELECT 1 FROM metalab_classes owned_class WHERE owned_class.id=post.class_id AND owned_class.responsible_teacher_id=$6))
     ORDER BY post.created_at DESC LIMIT CASE WHEN $3::boolean THEN NULL::integer ELSE $4::integer END
     OFFSET CASE WHEN $3::boolean THEN 0 ELSE $5::integer END
-  `, [studentId, authorOnly, teacherView, limit, offset, responsibleTeacherId??null]);
+  `, [studentId, authorOnly, teacherView, limit, offset, responsibleTeacherId??null, viewerTeacherId??null]);
   return result.rows.map(row => ({
     id: row.id, studentId: row.student_id, classId: row.class_id, authorName: row.author_name, businessName: row.business_name,
     businessSegment: row.business_segment, businessDescription: row.business_description, hasAvatar: row.has_avatar, className: row.class_name,
     body: row.body, imageName: row.image_name, imageMimeType: row.image_mime_type,
     imageSizeBytes: row.image_size_bytes === null ? null : Number(row.image_size_bytes),
     createdAt: toIso(row.created_at), likeCount: Number(row.like_count), likedByMe: row.liked_by_me,
+    teacherRatingAverage: row.teacher_rating_average === null ? null : Number(row.teacher_rating_average),
+    teacherRatingCount: Number(row.teacher_rating_count), teacherStars: row.teacher_stars,
     isMine: row.student_id === studentId, comments: row.comments ?? []
   }));
 }
@@ -956,7 +969,7 @@ export async function countStudentInstalabPosts(studentId: string, authorOnly = 
   return Number(result.rows[0]?.total ?? 0);
 }
 export async function listTeacherInstalabPostsForStudent(studentId: string) { return listInstalabPosts(studentId, true, true); }
-export async function listTeacherInstalabPosts(responsibleTeacherId?: string) { return listInstalabPosts('00000000-0000-0000-0000-000000000000', false, true, 100, 0, responsibleTeacherId); }
+export async function listTeacherInstalabPosts(responsibleTeacherId?: string, viewerTeacherId?: string) { return listInstalabPosts('00000000-0000-0000-0000-000000000000', false, true, 100, 0, responsibleTeacherId, viewerTeacherId); }
 
 export async function getStudentInstalabSponsoredAd(studentId: string) {
   return transaction(async client => {

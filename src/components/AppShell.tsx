@@ -25,6 +25,9 @@ const navigation = [
   { href: '/missoes', label: 'Missões', short: 'MI' },
   { href: '/instalab', label: 'InstaFlow', short: 'IF' },
   { href: '/apresentacoes', label: 'Apresentações', short: 'AP' },
+  { href: '/arquivos', label: 'Materiais', short: 'AR' },
+  { href: '/notas', label: 'Minhas Notas', short: 'NO' },
+  { href: '/gameflows', label: 'GameFlows', short: 'GF' },
   { href: '/entregas', label: 'Entregas', short: 'EN' },
   { href: '/forum', label: 'Fórum', short: 'FO' }
 ];

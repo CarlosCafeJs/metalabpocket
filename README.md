@@ -7,6 +7,7 @@ Plataforma educacional em Next.js, React e PostgreSQL para organizar turmas, pro
 - **Aluno:** Central, Perfil, Minha Turma, Missões, InstaFlow, Entregas e Fórum.
 - **Professor:** turmas e matrículas, missões de sala, acompanhamento das entregas, InstaFlow, apresentações e administração de contas docentes.
 - **Contas:** aluno entra com CPF ou e-mail e senha; professor solicita cadastro e permanece sem acesso até ser aprovado por um administrador. O acesso docente usa contas no banco, não credenciais fixas de ambiente.
+- **Arquivos da turma:** professores compartilham documentos com uma turma específica; somente alunos atualmente vinculados à turma podem listar e baixar os materiais. Arquivos de até 15 MB ficam no PostgreSQL e a aba do aluno aparece como **Materiais**.
 - **MetaCoins e anúncios:** carteira, campanhas, aprovação e cobrança continuam no escopo funcional.
 - **Desktop:** Electron e sincronização offline permanecem no repositório; os contratos internos só devem mudar com validação de compatibilidade.
 

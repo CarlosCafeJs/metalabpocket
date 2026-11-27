@@ -6,6 +6,7 @@ import { getTeacherAccountSession } from '@/server/teacher-accounts';
 import { z } from 'zod';
 import { readJson, sameOrigin } from '@/server/validation';
 import { getPool } from '@/server/db';
+import { listTeacherAcademicEvaluationsForStudent } from '@/server/academic-evaluations';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,17 +31,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (!student) return NextResponse.json({ error: 'Aluno não encontrado.' }, { status: 404 });
     if (responsibleTeacherId) {
       // Student deliveries are resolved to the class they belonged to at send time.
-      const [business, attempts, classroomSubmissions, classroomProgress] = await Promise.all([getBusiness(studentId), getMissionAttempts(studentId), listTeacherClassroomSubmissionsForStudent(studentId,responsibleTeacherId), getTeacherClassroomProgress(studentId,responsibleTeacherId)]);
+      const [business, attempts, classroomSubmissions, classroomProgress, evaluations] = await Promise.all([getBusiness(studentId), getMissionAttempts(studentId), listTeacherClassroomSubmissionsForStudent(studentId,responsibleTeacherId), getTeacherClassroomProgress(studentId,responsibleTeacherId), listTeacherAcademicEvaluationsForStudent(studentId,responsibleTeacherId)]);
       const completedMissions = attempts.filter(attempt => attempt.status === 'completed').length;
       return NextResponse.json({
         student, business,
         progress: { completedMissions: completedMissions + classroomProgress.completed, totalMissions: allMissions.length + classroomProgress.total, records: [] },
-        deliveries: await listStudentDeliveries(studentId,responsibleTeacherId), classroomSubmissions, instalabPosts: [], economy: null
+        deliveries: await listStudentDeliveries(studentId,responsibleTeacherId), classroomSubmissions, instalabPosts: [], economy: null, evaluations
       }, { headers: { 'Cache-Control': 'no-store' } });
     }
-    const [business, attempts, deliveries, classroomSubmissions, classroomProgress, instalabPosts, economy] = await Promise.all([
+    const [business, attempts, deliveries, classroomSubmissions, classroomProgress, instalabPosts, economy, evaluations] = await Promise.all([
       getBusiness(studentId), getMissionAttempts(studentId), listStudentDeliveries(studentId), listTeacherClassroomSubmissionsForStudent(studentId), getTeacherClassroomProgress(studentId), listTeacherInstalabPostsForStudent(studentId)
-      , (async()=>{try{const [wallet,campaigns]=await Promise.all([getPool().query(`SELECT COALESCE(SUM(amount),0)::int AS balance,COALESCE(SUM(amount) FILTER (WHERE amount>0),0)::int AS earned,ABS(COALESCE(SUM(amount) FILTER (WHERE amount<0),0))::int AS spent FROM metalab_instalab_wallet_entries WHERE student_id=$1`,[studentId]),getPool().query(`SELECT id,caption,status,budget_limit AS "budgetLimit",amount_spent AS "amountSpent",GREATEST(0,budget_limit-amount_spent) AS "remainingBudget",billing_interval_count AS "paidIntervals",paid_through AS "paidThrough",created_at AS "createdAt",rejection_reason AS "rejectionReason",COALESCE((SELECT COUNT(*) FROM metalab_instalab_campaign_impressions impression WHERE impression.campaign_id=campaign.id),0)::int AS impressions FROM metalab_instalab_campaigns campaign WHERE student_id=$1 ORDER BY created_at DESC`,[studentId])]);return {wallet:wallet.rows[0],campaigns:campaigns.rows};}catch(error){if(error&&typeof error==='object'&&'code'in error&&String(error.code)==='42P01')return null;throw error;}})()
+      , (async()=>{try{const [wallet,campaigns]=await Promise.all([getPool().query(`SELECT COALESCE(SUM(amount),0)::int AS balance,COALESCE(SUM(amount) FILTER (WHERE amount>0),0)::int AS earned,ABS(COALESCE(SUM(amount) FILTER (WHERE amount<0),0))::int AS spent FROM metalab_instalab_wallet_entries WHERE student_id=$1`,[studentId]),getPool().query(`SELECT id,caption,status,budget_limit AS "budgetLimit",amount_spent AS "amountSpent",GREATEST(0,budget_limit-amount_spent) AS "remainingBudget",billing_interval_count AS "paidIntervals",paid_through AS "paidThrough",created_at AS "createdAt",rejection_reason AS "rejectionReason",COALESCE((SELECT COUNT(*) FROM metalab_instalab_campaign_impressions impression WHERE impression.campaign_id=campaign.id),0)::int AS impressions FROM metalab_instalab_campaigns campaign WHERE student_id=$1 ORDER BY created_at DESC`,[studentId])]);return {wallet:wallet.rows[0],campaigns:campaigns.rows};}catch(error){if(error&&typeof error==='object'&&'code'in error&&String(error.code)==='42P01')return null;throw error;}})(),
+      listTeacherAcademicEvaluationsForStudent(studentId)
     ]);
     const completedIds = new Set(attempts.filter(attempt => attempt.status === 'completed').map(attempt => attempt.missionId));
     return NextResponse.json({
@@ -50,7 +52,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       deliveries,
       classroomSubmissions,
       instalabPosts,
-      economy
+      economy,
+      evaluations
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNEXPECTED';

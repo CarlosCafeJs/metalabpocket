@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import './globals.css';
 import './desktop-sync.css';
 import './presentations.css';
+import './class-files.css';
+import './gameflows.css';
 
 export const metadata: Metadata = {
   title: {
